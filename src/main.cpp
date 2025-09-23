@@ -57,21 +57,15 @@ int main() {
         test.detach();
 
         run_ring(
-            1, 1,
+            128, 1,
             ring_init(
                 submit_no_op(0, &noopdata);
-                submit_socket(AF_INET, SOCK_STREAM, 0, 0, &user_data);
-                std::cout << "Got ring fd: " << ring_fd << std::endl;
-                auto ring_fd = 4;
+                submit_no_op(0, &user_data);
             ),
             ring_block(
                 on_no_op(
                     ops += 1;
-                    submit_no_op(0, &noopdata);
-                );
-
-                on_socket(
-                    std::cout << "Got socket: " << completion.res << std::endl;
+                    submit_no_op(0, c_data);
                 );
             )
         );;

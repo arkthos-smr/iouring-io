@@ -10,45 +10,45 @@
 #include <linux/futex.h>
 
 
-// Wrapper for io_uring_setup syscall with error checking
-int io_uring_setup(const unsigned entries, io_uring_params *params) {
-    const int ring_fd = syscall(__NR_io_uring_setup, entries, params);
-    if (ring_fd < 0) {
-        throw std::runtime_error("io_uring_setup failed: " + std::string(std::strerror(errno)));
-    }
-    return ring_fd;
-}
-
-// Wrapper for io_uring_enter syscall with error checking
-int io_uring_enter(
-    const int ring_fd,
-    const unsigned int to_submit,
-    const unsigned int min_complete,
-    const unsigned int flags
-) {
-    const int result = syscall(__NR_io_uring_enter, ring_fd, to_submit, min_complete, flags, nullptr, 0);
-    if (result < 0) {
-        throw std::runtime_error("io_uring_enter failed: " + std::string(std::strerror(errno)));
-    }
-    return result;
-}
-
-// Wrapper for io_uring_register syscall with error checking
-int io_uring_register(
-    const unsigned int ring_fd,
-    const unsigned int op,
-    void *arg,
-    const unsigned int nr_args
-) {
-    const int result = syscall(__NR_io_uring_register, ring_fd, op, arg, nr_args);
-    if (result < 0) {
-        std::string err_msg = "io_uring_register buffers failed: ";
-        err_msg += strerror(-result);
-        err_msg += " (" + std::to_string(result) + ")\n";
-        throw std::runtime_error(err_msg);
-    }
-    return result;
-}
+// // Wrapper for io_uring_setup syscall with error checking
+// inline int io_uring_setup(const unsigned entries, io_uring_params *params) {
+//     const int ring_fd = syscall(__NR_io_uring_setup, entries, params);
+//     if (ring_fd < 0) {
+//         throw std::runtime_error("io_uring_setup failed: " + std::string(std::strerror(errno)));
+//     }
+//     return ring_fd;
+// }
+//
+// // Wrapper for io_uring_enter syscall with error checking
+// inline int io_uring_enter(
+//     const int ring_fd,
+//     const unsigned int to_submit,
+//     const unsigned int min_complete,
+//     const unsigned int flags
+// ) {
+//     const int result = syscall(__NR_io_uring_enter, ring_fd, to_submit, min_complete, flags, nullptr, 0);
+//     if (result < 0) {
+//         throw std::runtime_error("io_uring_enter failed: " + std::string(std::strerror(errno)));
+//     }
+//     return result;
+// }
+//
+// // Wrapper for io_uring_register syscall with error checking
+// inline int io_uring_register(
+//     const unsigned int ring_fd,
+//     const unsigned int op,
+//     void *arg,
+//     const unsigned int nr_args
+// ) {
+//     const int result = syscall(__NR_io_uring_register, ring_fd, op, arg, nr_args);
+//     if (result < 0) {
+//         std::string err_msg = "io_uring_register buffers failed: ";
+//         err_msg += strerror(-result);
+//         err_msg += " (" + std::to_string(result) + ")\n";
+//         throw std::runtime_error(err_msg);
+//     }
+//     return result;
+// }
 
 
 // Ring::Ring(const RingConfig &config) : config(config) {
