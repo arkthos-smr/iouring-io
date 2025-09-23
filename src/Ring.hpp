@@ -89,7 +89,7 @@ do { \
 } while(0)
 
 #define submit_with(op, s_flags, s_data) \
-do { \
+do {                                     \
     (s_data)->opcode = (op); \
     submit( \
         .opcode = (op), \
@@ -113,10 +113,10 @@ do { \
     submit_with(IORING_OP_NOP, s_flags, s_data)
 
 #define submit_connect(socket, target_address, target_address_len, s_flags, s_data) \
-    submit_with_args(IORING_OP_CONNCT, s_flags, s_data, \
+    submit_with_args(IORING_OP_CONNECT, s_flags, s_data,                             \
         .fd = (socket), \
         .addr = reinterpret_cast<unsigned long>(target_address), \
-        .addr2 = target_address_len, \
+        .addr2 = target_address_len \
     )
 
 #define submit_accept(socket, client_address, client_address_len, s_flags, s_data) \
@@ -178,6 +178,129 @@ do { \
         .buf_group = buffer_group \
     )
 
+
+#define submit_timeout(id, spec, count, timeout_flags, s_flags) \
+    submit_with_args(IORING_OP_TIMEOUT, s_flags, id,            \
+        .off = count,                                           \
+        .len = 1,                                               \
+        .addr = reinterpret_cast<unsigned long>(spec),          \
+        .timeout_flags = timeout_flags                          \
+    )
+
+#define submit_timeout_remove(id, timeout_flags, s_flags, s_data) \
+    submit_with_args(IORING_OP_TIMEOUT_REMOVE, s_flags, s_data,   \
+        .addr = id,                                               \
+        .timeout_flags = timeout_flags                            \
+    )
+
+#define submit_timeout_update(id, spec, timeout_flags, s_flags, s_data) \
+    submit_with_args(IORING_OP_TIMEOUT_REMOVE, s_flags, s_data,         \
+        .off = reinterpret_cast<unsigned long int>(spec),               \
+        .addr = id,                                                     \
+        .timeout_flags = timeout_flags                                  \
+    )
+
+#define submit_futex_wait(uaddr, expected, futex_flags, s_flags, s_data) \
+    submit_with_args(IORING_OP_FUTEX_WAIT, s_flags, s_data,              \
+        .addr = reinterpret_cast<unsigned long>(uaddr),                  \
+        .addr2 = expected,                                               \
+        .addr3 = 0xFFFFFFFF,                                             \
+        .fd = futex_flags                                                \
+    )
+
+#define submit_futex_wake(uaddr, wake_count, futex_flags, s_flags, s_data) \
+    submit_with_args(IORING_OP_FUTEX_WAKE, s_flags, s_data,                \
+        .addr = uaddr,                                                     \
+        .addr2 = wake_count,                                               \
+        .addr3 = 0xFFFFFFFF,                                               \
+        .fd = futex_flags                                                  \
+    )
+
+#define submit_msg_ring(target_ring_fd, len, cmd, src_fd, dst_fd, msg_ring_flags, s_flags, s_data) \
+    submit_with_args(IORING_OP_MSG_RING, s_flags, s_data,                                          \
+        .fd = target_ring_fd,                                                                      \
+        .len = len,                                                                                \
+        .addr = cmd,                                                                               \
+        .addr3 = src_fd,                                                                           \
+        .file_index = dst_fd,                                                                      \
+        .msg_ring_flags = msg_ring_flags                                                           \
+    )
+
+#define submit_accept_multishot(fd, addr, addr_len, s_flags, s_data) \
+    submit_with_args(IORING_OP_ACCEPT, s_flags, s_data,              \
+        .fd = fd,                                                    \
+        .addr = reinterpret_cast<unsigned long>(addr),               \
+        .addr2 = reinterpret_cast<unsigned long>(addr_len),          \
+        .ioprio = IORING_ACCEPT_MULTISHOT                            \
+    )
+
+#define submit_sendmsg_zc(fd_slot, msg, buf_index, s_flags, s_data)            \
+    submit_with_args(IORING_OP_SENDMSG_ZC, s_flags | IOSQE_FIXED_FILE, s_data, \
+        .fd = fd_slot,                                                         \
+        .addr = reinterpret_cast<unsigned long>(msg),                          \
+        .len = 1,                                                              \
+        .buf_index = buf_index,                                                \
+        .ioprio = IORING_RECVSEND_FIXED_BUF                                    \
+    )
+
+#define submit_send_zc(fd_slot, buf, len, addr, addr_len, buf_index, msg_flags, zc_flags, s_flags, s_data) \
+    submit_with_args(IORING_OP_SEND_ZC, s_flags | IOSQE_FIXED_FILE, s_data,                                \
+        .fd = fd_slot,                                                                                     \
+        .addr = reinterpret_cast<unsigned long>(buf),                                                      \
+        .len = len,                                                                                        \
+        .msg_flags = zc_flags,                                                                             \
+        .addr2 = reinterpret_cast<unsigned long>(addr),                                                    \
+        .addr_len = addr_len,                                                                              \
+        .buf_index = buf_index,                                                                            \
+        .msg_flags = msg_flags,                                                                            \
+        .ioprio = zc_flags | IORING_RECVSEND_FIXED_BUF                                                     \
+    )
+
+#define submit_recv_multishot(fd_slot, buf_group, mshot_len, mshot_total_len, s_flags, s_data) \
+    submit_with_args(IORING_OP_RECV, s_flags | IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE, s_data, \
+        .fd = fd_slot,                                                                         \
+        .buf_group = buf_group,                                                                \
+        .ioprio = IORING_RECV_MULTISHOT,                                                       \
+        .len = mshot_len,                                                                      \
+        .optlen = mshot_total_len,                                                             \
+        .msg_flags = 0                                                                         \
+    )
+
+#define submit_read_multishot(fd_slot, offset, buf_group, s_flags, s_data)                               \
+    submit_with_args(IORING_OP_READ_MULTISHOT, s_flags | IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE, s_data, \
+        .fd = fd_slot,                                                                                   \
+        .off = offset,                                                                                   \
+        .buf_group = buf_group                                                                           \
+    )
+
+#define submit_recv_zc_multishot(fd_slot, zcrx_index, s_flags, s_data)      \
+    submit_with_args(IORING_OP_RECV_ZC, s_flags | IOSQE_FIXED_FILE, s_data, \
+        .fd = fd_slot,                                                      \
+        .ioprio = IORING_RECVSEND_FIXED_BUF | IORING_RECV_MULTISHOT,        \
+        .zcrx_ifq_idx = zcrx_index                                          \
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #define on_no_op(block)     if (c_data->opcode == IORING_OP_NOP)    { block }
 #define on_socket(block)    if (c_data->opcode == IORING_OP_SOCKET) { block }
 #define on_listen(block)    if (c_data->opcode == IORING_OP_LISTEN) { block }
@@ -190,7 +313,7 @@ do { \
 #define run_ring(size, pin, init, block) \
 do { \
     static_assert(std::is_integral_v<decltype(size)>, "size must be an integer"); \
-    static_assert(std::is_integral_v<decltype(pin)>, "pin must be an integer"); \
+    static_assert(std::is_integral_v<decltype(pin)>, "pin must be an integer");   \
     static_assert(pin >= 0, "pin must be >= 0"); \
     static_assert(size > 0, "size must be > 0"); \
     struct io_uring_params* _r_params = (struct io_uring_params*)malloc(sizeof(struct io_uring_params)); \
