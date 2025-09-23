@@ -1,0 +1,135 @@
+\doxysection{Ring\+Config Class Reference}
+\hypertarget{class_ring_config}{}\label{class_ring_config}\index{RingConfig@{RingConfig}}
+
+
+Configuration for the io\+\_\+uring ring setup.  
+
+
+
+
+{\ttfamily \#include $<$Ring\+Config.\+hpp$>$}
+
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\mbox{\hyperlink{class_ring_config_a76e6ff498bfcb1486d254c357629fad8}{Ring\+Config}} (Ring\+IOType type, unsigned int size, int pin, bool submit\+\_\+all, std\+::chrono\+::microseconds sq\+\_\+thread\+\_\+idle=std\+::chrono\+::microseconds(1000000))
+\begin{DoxyCompactList}\small\item\em Constructs a \doxylink{class_ring_config}{Ring\+Config} with specified parameters. \end{DoxyCompactList}\item 
+Ring\+IOType \mbox{\hyperlink{class_ring_config_a3df00fa05dd04a09956e4e914aaef83f}{get\+\_\+type}} () const
+\begin{DoxyCompactList}\small\item\em Returns the io\+\_\+uring ring type. \end{DoxyCompactList}\item 
+unsigned int \mbox{\hyperlink{class_ring_config_a90d878c3b6748f969b1a43126c572a05}{get\+\_\+size}} () const
+\begin{DoxyCompactList}\small\item\em Returns the size (number of entries) of the ring. \end{DoxyCompactList}\item 
+int \mbox{\hyperlink{class_ring_config_a823f3de2a9c1dc4c0b584f5d72a1c3bf}{get\+\_\+pin}} () const
+\begin{DoxyCompactList}\small\item\em Returns the CPU core pin for the sqpoll thread. \end{DoxyCompactList}\item 
+bool \mbox{\hyperlink{class_ring_config_a7618bb881f73c7fef643ab6222861832}{get\+\_\+submit\+\_\+all}} () const
+\begin{DoxyCompactList}\small\item\em Indicates if all queued operations should be submitted at once. \end{DoxyCompactList}\item 
+std\+::chrono\+::microseconds \mbox{\hyperlink{class_ring_config_a0a56ddc4f555395447db040e5b4f8ed3}{get\+\_\+sq\+\_\+thread\+\_\+idle}} () const
+\begin{DoxyCompactList}\small\item\em Returns the idle time of the sqpoll thread in microseconds. \end{DoxyCompactList}\end{DoxyCompactItemize}
+
+
+\doxysubsection{Detailed Description}
+Configuration for the io\+\_\+uring ring setup. 
+
+This class encapsulates parameters for configuring an io\+\_\+uring instance, such as ring type, size, CPU pinning, and submission behavior. 
+
+\label{doc-constructors}
+\Hypertarget{class_ring_config_doc-constructors}
+\doxysubsection{Constructor \& Destructor Documentation}
+\Hypertarget{class_ring_config_a76e6ff498bfcb1486d254c357629fad8}\index{RingConfig@{RingConfig}!RingConfig@{RingConfig}}
+\index{RingConfig@{RingConfig}!RingConfig@{RingConfig}}
+\doxysubsubsection{\texorpdfstring{RingConfig()}{RingConfig()}}
+{\footnotesize\ttfamily \label{class_ring_config_a76e6ff498bfcb1486d254c357629fad8} 
+Ring\+Config\+::\+Ring\+Config (\begin{DoxyParamCaption}\item[{Ring\+IOType}]{type}{, }\item[{unsigned int}]{size}{, }\item[{int}]{pin}{, }\item[{bool}]{submit\+\_\+all}{, }\item[{std\+::chrono\+::microseconds}]{sq\+\_\+thread\+\_\+idle}{ = {\ttfamily std\+:\+:chrono\+:\+:microseconds(1000000)}}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [explicit]}}
+
+
+
+Constructs a \doxylink{class_ring_config}{Ring\+Config} with specified parameters. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em type} & The io\+\_\+uring ring type. \\
+\hline
+{\em size} & Number of entries in the ring. \\
+\hline
+{\em pin} & CPU core to pin the sqpoll thread to (-\/1 disables pinning). \\
+\hline
+{\em submit\+\_\+all} & Whether to submit all queued operations at once. \\
+\hline
+{\em sq\+\_\+thread\+\_\+idle} & Idle time for sqpoll thread (default 1 second). \\
+\hline
+\end{DoxyParams}
+
+
+\label{doc-func-members}
+\Hypertarget{class_ring_config_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{class_ring_config_a823f3de2a9c1dc4c0b584f5d72a1c3bf}\index{RingConfig@{RingConfig}!get\_pin@{get\_pin}}
+\index{get\_pin@{get\_pin}!RingConfig@{RingConfig}}
+\doxysubsubsection{\texorpdfstring{get\_pin()}{get\_pin()}}
+{\footnotesize\ttfamily \label{class_ring_config_a823f3de2a9c1dc4c0b584f5d72a1c3bf} 
+int Ring\+Config\+::get\+\_\+pin (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [nodiscard]}}
+
+
+
+Returns the CPU core pin for the sqpoll thread. 
+
+\begin{DoxyReturn}{Returns}
+CPU core index or -\/1 if pinning is disabled. 
+\end{DoxyReturn}
+\Hypertarget{class_ring_config_a90d878c3b6748f969b1a43126c572a05}\index{RingConfig@{RingConfig}!get\_size@{get\_size}}
+\index{get\_size@{get\_size}!RingConfig@{RingConfig}}
+\doxysubsubsection{\texorpdfstring{get\_size()}{get\_size()}}
+{\footnotesize\ttfamily \label{class_ring_config_a90d878c3b6748f969b1a43126c572a05} 
+unsigned int Ring\+Config\+::get\+\_\+size (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [nodiscard]}}
+
+
+
+Returns the size (number of entries) of the ring. 
+
+\begin{DoxyReturn}{Returns}
+Number of entries as unsigned int. 
+\end{DoxyReturn}
+\Hypertarget{class_ring_config_a0a56ddc4f555395447db040e5b4f8ed3}\index{RingConfig@{RingConfig}!get\_sq\_thread\_idle@{get\_sq\_thread\_idle}}
+\index{get\_sq\_thread\_idle@{get\_sq\_thread\_idle}!RingConfig@{RingConfig}}
+\doxysubsubsection{\texorpdfstring{get\_sq\_thread\_idle()}{get\_sq\_thread\_idle()}}
+{\footnotesize\ttfamily \label{class_ring_config_a0a56ddc4f555395447db040e5b4f8ed3} 
+std\+::chrono\+::microseconds Ring\+Config\+::get\+\_\+sq\+\_\+thread\+\_\+idle (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [nodiscard]}}
+
+
+
+Returns the idle time of the sqpoll thread in microseconds. 
+
+\begin{DoxyReturn}{Returns}
+Idle time as std\+::chrono\+::microseconds. 
+\end{DoxyReturn}
+\Hypertarget{class_ring_config_a7618bb881f73c7fef643ab6222861832}\index{RingConfig@{RingConfig}!get\_submit\_all@{get\_submit\_all}}
+\index{get\_submit\_all@{get\_submit\_all}!RingConfig@{RingConfig}}
+\doxysubsubsection{\texorpdfstring{get\_submit\_all()}{get\_submit\_all()}}
+{\footnotesize\ttfamily \label{class_ring_config_a7618bb881f73c7fef643ab6222861832} 
+bool Ring\+Config\+::get\+\_\+submit\+\_\+all (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [nodiscard]}}
+
+
+
+Indicates if all queued operations should be submitted at once. 
+
+\begin{DoxyReturn}{Returns}
+True if submit all is enabled, false otherwise. 
+\end{DoxyReturn}
+\Hypertarget{class_ring_config_a3df00fa05dd04a09956e4e914aaef83f}\index{RingConfig@{RingConfig}!get\_type@{get\_type}}
+\index{get\_type@{get\_type}!RingConfig@{RingConfig}}
+\doxysubsubsection{\texorpdfstring{get\_type()}{get\_type()}}
+{\footnotesize\ttfamily \label{class_ring_config_a3df00fa05dd04a09956e4e914aaef83f} 
+Ring\+IOType Ring\+Config\+::get\+\_\+type (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [nodiscard]}}
+
+
+
+Returns the io\+\_\+uring ring type. 
+
+\begin{DoxyReturn}{Returns}
+Ring\+IOType enum value. 
+\end{DoxyReturn}
+
+
+The documentation for this class was generated from the following files\+:\begin{DoxyCompactItemize}
+\item 
+src/Ring\+Config.\+hpp\item 
+src/Ring\+Config.\+cpp\end{DoxyCompactItemize}

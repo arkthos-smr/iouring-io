@@ -1,0 +1,85 @@
+\doxysection{Ring.\+hpp}
+\hypertarget{_ring_8hpp_source}{}\label{_ring_8hpp_source}\index{src/Ring.hpp@{src/Ring.hpp}}
+
+\begin{DoxyCode}{0}
+\DoxyCodeLine{00001\ \textcolor{preprocessor}{\#pragma\ once}}
+\DoxyCodeLine{00002\ }
+\DoxyCodeLine{00003\ \textcolor{preprocessor}{\#include\ <memory>}}
+\DoxyCodeLine{00004\ \textcolor{preprocessor}{\#include\ <atomic>}}
+\DoxyCodeLine{00005\ \textcolor{preprocessor}{\#include\ <linux/io\_uring.h>}}
+\DoxyCodeLine{00006\ \textcolor{preprocessor}{\#include\ <netinet/in.h>}}
+\DoxyCodeLine{00007\ }
+\DoxyCodeLine{00008\ \textcolor{preprocessor}{\#include\ "{}RingConfig.hpp"{}}\ \ \textcolor{comment}{//\ Your\ RingConfig\ header}}
+\DoxyCodeLine{00009\ }
+\DoxyCodeLine{00014\ \textcolor{keyword}{enum\ class}\ WaitMode\ \{}
+\DoxyCodeLine{00015\ \ \ \ \ NON\_BLOCKING,\ \ }
+\DoxyCodeLine{00016\ \ \ \ \ BLOCKING\ \ \ \ \ \ \ }
+\DoxyCodeLine{00017\ \};}
+\DoxyCodeLine{00018\ }
+\DoxyCodeLine{00025\ \textcolor{keyword}{class\ }\mbox{\hyperlink{class_ring_a633aea012aa766a9fcae719bdaa97151}{Ring}}\ \{}
+\DoxyCodeLine{00026\ \ \ \ \ \textcolor{keyword}{const}\ \mbox{\hyperlink{class_ring_config}{RingConfig}}\&\ config;\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00027\ \ \ \ \ \textcolor{keywordtype}{int}\ ring\_fd\ =\ -\/1;\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00028\ \ \ \ \ \textcolor{keyword}{mutable}\ \textcolor{keywordtype}{int}\ to\_submit\ =\ 0;\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00029\ \ \ \ \ std::unique\_ptr<io\_uring\_params>\ params;\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00030\ \ \ \ \ \textcolor{keywordtype}{void}*\ sq\_ptr\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00031\ \ \ \ \ \textcolor{keywordtype}{void}*\ cq\_ptr\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00032\ \ \ \ \ io\_uring\_sqe*\ sqes\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00033\ \ \ \ \ io\_uring\_cqe*\ cqes\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00034\ \ \ \ \ std::atomic<unsigned\ int>*\ sq\_head\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00035\ \ \ \ \ std::atomic<unsigned\ int>*\ sq\_tail\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00036\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}*\ sq\_ring\_mask\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00037\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}*\ sq\_array\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00038\ \ \ \ \ std::atomic<unsigned\ int>*\ sq\_flags\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00039\ \ \ \ \ std::atomic<unsigned\ int>*\ cq\_head\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00040\ \ \ \ \ std::atomic<unsigned\ int>*\ cq\_tail\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00041\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}*\ cq\_ring\_mask\ =\ \textcolor{keyword}{nullptr};\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00042\ \ \ \ \ \textcolor{keyword}{mutable}\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ completed\ =\ 0;\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00043\ }
+\DoxyCodeLine{00044\ \textcolor{keyword}{public}:}
+\DoxyCodeLine{00050\ \ \ \ \ \textcolor{keyword}{explicit}\ \mbox{\hyperlink{class_ring_a633aea012aa766a9fcae719bdaa97151}{Ring}}(\textcolor{keyword}{const}\ \mbox{\hyperlink{class_ring_config}{RingConfig}}\ \&config);}
+\DoxyCodeLine{00051\ }
+\DoxyCodeLine{00055\ \ \ \ \ \mbox{\hyperlink{class_ring_a515a41c0803bcdd921712d6f5047e101}{\string~Ring}}();}
+\DoxyCodeLine{00056\ }
+\DoxyCodeLine{00062\ \ \ \ \ io\_uring\_sqe*\ \mbox{\hyperlink{class_ring_a1cd1c87378ea5097c0b69b06965be361}{get\_sqe}}()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00063\ }
+\DoxyCodeLine{00069\ \ \ \ \ \textcolor{keywordtype}{void}\ \mbox{\hyperlink{class_ring_a25e91755166d1947c55dbfc82712dd81}{advance\_sq}}()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00070\ }
+\DoxyCodeLine{00079\ \ \ \ \ io\_uring\_cqe*\ \mbox{\hyperlink{class_ring_a9813bed31e86e7b0ae64786f2a08beb4}{get\_cqes}}(WaitMode\ mode)\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00080\ }
+\DoxyCodeLine{00085\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ \mbox{\hyperlink{class_ring_a42e3901b218147cdf8297b2ec03276e2}{get\_completed}}()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00086\ }
+\DoxyCodeLine{00087\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ get\_cq\_ring\_mask()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00088\ }
+\DoxyCodeLine{00093\ \ \ \ \ \textcolor{keywordtype}{void}\ \mbox{\hyperlink{class_ring_a5ca4e7884c64c8791cfd3652b73f4125}{advance\_cq}}()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00094\ }
+\DoxyCodeLine{00100\ \ \ \ \ \textcolor{keywordtype}{void}\ \mbox{\hyperlink{class_ring_a4712784c26b5dbf5947b744c6fda3fa6}{submit\_no\_op}}(\textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{long}\ user\_data)\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00101\ }
+\DoxyCodeLine{00116\ \textcolor{keywordtype}{void}\ \mbox{\hyperlink{class_ring_aa1c59a8a7af6437414f010cce15cd80d}{submit\_timeout}}(}
+\DoxyCodeLine{00117\ \ \ \ \ \_\_kernel\_timespec\ *spec,}
+\DoxyCodeLine{00118\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ count,}
+\DoxyCodeLine{00119\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ flags,}
+\DoxyCodeLine{00120\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{long}\ \textcolor{keywordtype}{id}}
+\DoxyCodeLine{00121\ )\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00122\ }
+\DoxyCodeLine{00135\ \textcolor{keywordtype}{void}\ \mbox{\hyperlink{class_ring_a0a33d8c5190fbce995fdbbf653cf5b4c}{submit\_timeout\_remove}}(}
+\DoxyCodeLine{00136\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ flags,}
+\DoxyCodeLine{00137\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{long}\ \textcolor{keywordtype}{id}}
+\DoxyCodeLine{00138\ )\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00139\ }
+\DoxyCodeLine{00154\ \textcolor{keywordtype}{void}\ \mbox{\hyperlink{class_ring_a965a5dd2c6a695593354390fe94e6c86}{submit\_timeout\_update}}(}
+\DoxyCodeLine{00155\ \ \ \ \ \_\_kernel\_timespec\ *next,}
+\DoxyCodeLine{00156\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ flags,}
+\DoxyCodeLine{00157\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{long}\ \textcolor{keywordtype}{id}}
+\DoxyCodeLine{00158\ )\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00159\ }
+\DoxyCodeLine{00173\ \textcolor{keywordtype}{void}\ \mbox{\hyperlink{class_ring_a170a887add5e93f80417e702e78abac4}{submit\_socket}}(\textcolor{keywordtype}{int}\ domain,\ \textcolor{keywordtype}{int}\ type,\ \textcolor{keywordtype}{int}\ protocol,\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ file\_slot,\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{long}\ user\_data,\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ flags)\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00174\ }
+\DoxyCodeLine{00187\ \textcolor{keywordtype}{void}\ \mbox{\hyperlink{class_ring_a5204b3598a5a970e9df3346beaac482d}{submit\_bind}}(\textcolor{keywordtype}{int}\ fd,\ \textcolor{keyword}{const}\ sockaddr\ *addr,\ socklen\_t\ addr\_len,\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{long}\ user\_data,\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ flags)\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00188\ }
+\DoxyCodeLine{00199\ \textcolor{keywordtype}{void}\ \mbox{\hyperlink{class_ring_a5a6bbb65516e84967844d2a96b963749}{submit\_listen}}(\textcolor{keywordtype}{int}\ fd,\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ backlog,\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{long}\ user\_data,\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ flags)\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00200\ }
+\DoxyCodeLine{00215\ \textcolor{keywordtype}{void}\ \mbox{\hyperlink{class_ring_acff140b681d0ce86f1a9c2be34e9dec2}{submit\_close}}(\textcolor{keywordtype}{int}\ fd,\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ file\_slot,\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{long}\ user\_data,\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ flags)\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00216\ }
+\DoxyCodeLine{00217\ \};}
+
+\end{DoxyCode}

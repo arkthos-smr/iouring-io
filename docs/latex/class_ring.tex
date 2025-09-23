@@ -1,0 +1,350 @@
+\doxysection{Ring Class Reference}
+\hypertarget{class_ring}{}\label{class_ring}\index{Ring@{Ring}}
+
+
+Wrapper around io\+\_\+uring that manages submission and completion queues. Provides methods for submitting operations and retrieving completions, abstracting low-\/level io\+\_\+uring syscalls and memory management.  
+
+
+
+
+{\ttfamily \#include $<$Ring.\+hpp$>$}
+
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\mbox{\hyperlink{class_ring_a633aea012aa766a9fcae719bdaa97151}{Ring}} (const \mbox{\hyperlink{class_ring_config}{Ring\+Config}} \&config)
+\begin{DoxyCompactList}\small\item\em Constructs an io\+\_\+uring \doxylink{class_ring}{Ring} with the specified configuration. \end{DoxyCompactList}\item 
+\Hypertarget{class_ring_a515a41c0803bcdd921712d6f5047e101}\label{class_ring_a515a41c0803bcdd921712d6f5047e101} 
+{\bfseries \texorpdfstring{$\sim$}{\string~}\+Ring} ()
+\begin{DoxyCompactList}\small\item\em Destroys the \doxylink{class_ring}{Ring}, closes file descriptors and unmaps memory. \end{DoxyCompactList}\item 
+io\+\_\+uring\+\_\+sqe \texorpdfstring{$\ast$}{*} \mbox{\hyperlink{class_ring_a1cd1c87378ea5097c0b69b06965be361}{get\+\_\+sqe}} () const
+\begin{DoxyCompactList}\small\item\em Get a pointer to the next available submission queue entry. \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_ring_a25e91755166d1947c55dbfc82712dd81}{advance\+\_\+sq}} () const
+\begin{DoxyCompactList}\small\item\em Advance the submission queue tail and submit queued operations to the kernel. If the kernel requires wakeup, this method handles it accordingly. \end{DoxyCompactList}\item 
+io\+\_\+uring\+\_\+cqe \texorpdfstring{$\ast$}{*} \mbox{\hyperlink{class_ring_a9813bed31e86e7b0ae64786f2a08beb4}{get\+\_\+cqes}} (Wait\+Mode mode) const
+\begin{DoxyCompactList}\small\item\em Retrieve completion queue events. Depending on the Wait\+Mode, this may block until completions are available or return immediately if none are present. \end{DoxyCompactList}\item 
+unsigned int \mbox{\hyperlink{class_ring_a42e3901b218147cdf8297b2ec03276e2}{get\+\_\+completed}} () const
+\begin{DoxyCompactList}\small\item\em Get the number of completions retrieved by the last \doxylink{class_ring_a9813bed31e86e7b0ae64786f2a08beb4}{get\+\_\+cqes()} call. \end{DoxyCompactList}\item 
+\Hypertarget{class_ring_aca8dd827173d572de928648770f4e4cb}\label{class_ring_aca8dd827173d572de928648770f4e4cb} 
+unsigned int {\bfseries get\+\_\+cq\+\_\+ring\+\_\+mask} () const
+\item 
+\Hypertarget{class_ring_a5ca4e7884c64c8791cfd3652b73f4125}\label{class_ring_a5ca4e7884c64c8791cfd3652b73f4125} 
+void {\bfseries advance\+\_\+cq} () const
+\begin{DoxyCompactList}\small\item\em Advance the completion queue head pointer by the number of processed completions. Marks completions as consumed by the application. \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_ring_a4712784c26b5dbf5947b744c6fda3fa6}{submit\+\_\+no\+\_\+op}} (unsigned long user\+\_\+data) const
+\begin{DoxyCompactList}\small\item\em Submit a no-\/op operation with user\+\_\+data set. \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_ring_aa1c59a8a7af6437414f010cce15cd80d}{submit\+\_\+timeout}} (\+\_\+\+\_\+kernel\+\_\+timespec \texorpdfstring{$\ast$}{*}spec, unsigned int count, unsigned int flags, unsigned long id) const
+\begin{DoxyCompactList}\small\item\em Submit a timeout operation to the submission queue. \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_ring_a0a33d8c5190fbce995fdbbf653cf5b4c}{submit\+\_\+timeout\+\_\+remove}} (unsigned int flags, unsigned long id) const
+\begin{DoxyCompactList}\small\item\em Submit a timeout removal operation to cancel a previously submitted timeout. \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_ring_a965a5dd2c6a695593354390fe94e6c86}{submit\+\_\+timeout\+\_\+update}} (\+\_\+\+\_\+kernel\+\_\+timespec \texorpdfstring{$\ast$}{*}next, unsigned int flags, unsigned long id) const
+\begin{DoxyCompactList}\small\item\em Submit a timeout update operation to modify an existing timeout. \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_ring_a170a887add5e93f80417e702e78abac4}{submit\+\_\+socket}} (int domain, int type, int protocol, unsigned int file\+\_\+slot, unsigned long user\+\_\+data, unsigned int flags) const
+\begin{DoxyCompactList}\small\item\em Submit a socket creation operation to the submission queue. \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_ring_a5204b3598a5a970e9df3346beaac482d}{submit\+\_\+bind}} (int fd, const sockaddr \texorpdfstring{$\ast$}{*}addr, socklen\+\_\+t addr\+\_\+len, unsigned long user\+\_\+data, unsigned int flags) const
+\begin{DoxyCompactList}\small\item\em Submit a bind operation to associate a socket with a local address. \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_ring_a5a6bbb65516e84967844d2a96b963749}{submit\+\_\+listen}} (int fd, unsigned int backlog, unsigned long user\+\_\+data, unsigned int flags) const
+\begin{DoxyCompactList}\small\item\em Submit a listen operation to mark a socket as passive for accepting connections. \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_ring_acff140b681d0ce86f1a9c2be34e9dec2}{submit\+\_\+close}} (int fd, unsigned int file\+\_\+slot, unsigned long user\+\_\+data, unsigned int flags) const
+\begin{DoxyCompactList}\small\item\em Submit a close operation to close a file descriptor or socket. \end{DoxyCompactList}\end{DoxyCompactItemize}
+
+
+\doxysubsection{Detailed Description}
+Wrapper around io\+\_\+uring that manages submission and completion queues. Provides methods for submitting operations and retrieving completions, abstracting low-\/level io\+\_\+uring syscalls and memory management. 
+
+\label{doc-constructors}
+\Hypertarget{class_ring_doc-constructors}
+\doxysubsection{Constructor \& Destructor Documentation}
+\Hypertarget{class_ring_a633aea012aa766a9fcae719bdaa97151}\index{Ring@{Ring}!Ring@{Ring}}
+\index{Ring@{Ring}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{Ring()}{Ring()}}
+{\footnotesize\ttfamily \label{class_ring_a633aea012aa766a9fcae719bdaa97151} 
+Ring\+::\+Ring (\begin{DoxyParamCaption}\item[{const \mbox{\hyperlink{class_ring_config}{Ring\+Config}} \&}]{config}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [explicit]}}
+
+
+
+Constructs an io\+\_\+uring \doxylink{class_ring}{Ring} with the specified configuration. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em config} & Reference to a \doxylink{class_ring_config}{Ring\+Config} object that controls setup parameters. \\
+\hline
+\end{DoxyParams}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em std\+::runtime\+\_\+error} & if io\+\_\+uring setup or mmap operations fail. \\
+\hline
+\end{DoxyExceptions}
+
+
+\label{doc-func-members}
+\Hypertarget{class_ring_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{class_ring_a25e91755166d1947c55dbfc82712dd81}\index{Ring@{Ring}!advance\_sq@{advance\_sq}}
+\index{advance\_sq@{advance\_sq}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{advance\_sq()}{advance\_sq()}}
+{\footnotesize\ttfamily \label{class_ring_a25e91755166d1947c55dbfc82712dd81} 
+void Ring\+::advance\+\_\+sq (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const}
+
+
+
+Advance the submission queue tail and submit queued operations to the kernel. If the kernel requires wakeup, this method handles it accordingly. 
+
+
+\begin{DoxyExceptions}{Exceptions}
+{\em std\+::runtime\+\_\+error} & if io\+\_\+uring\+\_\+enter syscall fails. \\
+\hline
+\end{DoxyExceptions}
+\Hypertarget{class_ring_a42e3901b218147cdf8297b2ec03276e2}\index{Ring@{Ring}!get\_completed@{get\_completed}}
+\index{get\_completed@{get\_completed}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{get\_completed()}{get\_completed()}}
+{\footnotesize\ttfamily \label{class_ring_a42e3901b218147cdf8297b2ec03276e2} 
+unsigned int Ring\+::get\+\_\+completed (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const}
+
+
+
+Get the number of completions retrieved by the last \doxylink{class_ring_a9813bed31e86e7b0ae64786f2a08beb4}{get\+\_\+cqes()} call. 
+
+\begin{DoxyReturn}{Returns}
+Number of completion events available. 
+\end{DoxyReturn}
+\Hypertarget{class_ring_a9813bed31e86e7b0ae64786f2a08beb4}\index{Ring@{Ring}!get\_cqes@{get\_cqes}}
+\index{get\_cqes@{get\_cqes}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{get\_cqes()}{get\_cqes()}}
+{\footnotesize\ttfamily \label{class_ring_a9813bed31e86e7b0ae64786f2a08beb4} 
+io\+\_\+uring\+\_\+cqe \texorpdfstring{$\ast$}{*} Ring\+::get\+\_\+cqes (\begin{DoxyParamCaption}\item[{Wait\+Mode}]{mode}{}\end{DoxyParamCaption}) const}
+
+
+
+Retrieve completion queue events. Depending on the Wait\+Mode, this may block until completions are available or return immediately if none are present. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em mode} & Wait\+Mode specifying blocking or non-\/blocking behavior. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Pointer to the first io\+\_\+uring\+\_\+cqe, or nullptr if no completions available (in non-\/blocking mode). 
+\end{DoxyReturn}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em std\+::runtime\+\_\+error} & if blocking wait fails or errors occur. \\
+\hline
+\end{DoxyExceptions}
+\Hypertarget{class_ring_a1cd1c87378ea5097c0b69b06965be361}\index{Ring@{Ring}!get\_sqe@{get\_sqe}}
+\index{get\_sqe@{get\_sqe}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{get\_sqe()}{get\_sqe()}}
+{\footnotesize\ttfamily \label{class_ring_a1cd1c87378ea5097c0b69b06965be361} 
+io\+\_\+uring\+\_\+sqe \texorpdfstring{$\ast$}{*} Ring\+::get\+\_\+sqe (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const}
+
+
+
+Get a pointer to the next available submission queue entry. 
+
+\begin{DoxyReturn}{Returns}
+Pointer to io\+\_\+uring\+\_\+sqe to be filled out by the caller. 
+\end{DoxyReturn}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em std\+::runtime\+\_\+error} & if submission queue is full. \\
+\hline
+\end{DoxyExceptions}
+\Hypertarget{class_ring_a5204b3598a5a970e9df3346beaac482d}\index{Ring@{Ring}!submit\_bind@{submit\_bind}}
+\index{submit\_bind@{submit\_bind}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{submit\_bind()}{submit\_bind()}}
+{\footnotesize\ttfamily \label{class_ring_a5204b3598a5a970e9df3346beaac482d} 
+void Ring\+::submit\+\_\+bind (\begin{DoxyParamCaption}\item[{int}]{fd}{, }\item[{const sockaddr \texorpdfstring{$\ast$}{*}}]{addr}{, }\item[{socklen\+\_\+t}]{addr\+\_\+len}{, }\item[{unsigned long}]{user\+\_\+data}{, }\item[{unsigned int}]{flags}{}\end{DoxyParamCaption}) const}
+
+
+
+Submit a bind operation to associate a socket with a local address. 
+
+This operation binds the specified socket to a local address (e.\+g., IP and port). It must be performed before calling {\ttfamily listen()} or {\ttfamily connect()} on the socket.
+
+
+\begin{DoxyParams}{Parameters}
+{\em fd} & File descriptor of the socket to bind. \\
+\hline
+{\em addr} & Pointer to a sockaddr structure (e.\+g., sockaddr\+\_\+in). \\
+\hline
+{\em addr\+\_\+len} & Length of the sockaddr structure. \\
+\hline
+{\em user\+\_\+data} & User-\/defined data to associate with this operation. \\
+\hline
+{\em flags} & Submission queue entry flags (e.\+g., IOSQE\+\_\+\+IO\+\_\+\+LINK). \\
+\hline
+\end{DoxyParams}
+\Hypertarget{class_ring_acff140b681d0ce86f1a9c2be34e9dec2}\index{Ring@{Ring}!submit\_close@{submit\_close}}
+\index{submit\_close@{submit\_close}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{submit\_close()}{submit\_close()}}
+{\footnotesize\ttfamily \label{class_ring_acff140b681d0ce86f1a9c2be34e9dec2} 
+void Ring\+::submit\+\_\+close (\begin{DoxyParamCaption}\item[{int}]{fd}{, }\item[{unsigned int}]{file\+\_\+slot}{, }\item[{unsigned long}]{user\+\_\+data}{, }\item[{unsigned int}]{flags}{}\end{DoxyParamCaption}) const}
+
+
+
+Submit a close operation to close a file descriptor or socket. 
+
+This operation closes the given file descriptor, optionally releasing it from a fixed file slot.
+
+
+\begin{DoxyParams}{Parameters}
+{\em fd} & File descriptor to close. Set to 0 when using fixed file descriptors. \\
+\hline
+{\em file\+\_\+slot} & Fixed file slot to close (set to 0 if unused). \\
+\hline
+{\em user\+\_\+data} & User-\/defined data to associate with this operation. \\
+\hline
+{\em flags} & Submission queue entry flags (e.\+g., IOSQE\+\_\+\+IO\+\_\+\+LINK).\\
+\hline
+\end{DoxyParams}
+\begin{DoxyNote}{Note}
+When using fixed files, {\ttfamily fd} should be 0 and {\ttfamily file\+\_\+slot} should indicate which file index to close. 
+\end{DoxyNote}
+\Hypertarget{class_ring_a5a6bbb65516e84967844d2a96b963749}\index{Ring@{Ring}!submit\_listen@{submit\_listen}}
+\index{submit\_listen@{submit\_listen}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{submit\_listen()}{submit\_listen()}}
+{\footnotesize\ttfamily \label{class_ring_a5a6bbb65516e84967844d2a96b963749} 
+void Ring\+::submit\+\_\+listen (\begin{DoxyParamCaption}\item[{int}]{fd}{, }\item[{unsigned int}]{backlog}{, }\item[{unsigned long}]{user\+\_\+data}{, }\item[{unsigned int}]{flags}{}\end{DoxyParamCaption}) const}
+
+
+
+Submit a listen operation to mark a socket as passive for accepting connections. 
+
+This operation makes a bound socket ready to accept incoming connection requests.
+
+
+\begin{DoxyParams}{Parameters}
+{\em fd} & File descriptor of the socket. \\
+\hline
+{\em backlog} & Maximum length for the queue of pending connections. \\
+\hline
+{\em user\+\_\+data} & User-\/defined data to associate with this operation. \\
+\hline
+{\em flags} & Submission queue entry flags (e.\+g., IOSQE\+\_\+\+IO\+\_\+\+LINK). \\
+\hline
+\end{DoxyParams}
+\Hypertarget{class_ring_a4712784c26b5dbf5947b744c6fda3fa6}\index{Ring@{Ring}!submit\_no\_op@{submit\_no\_op}}
+\index{submit\_no\_op@{submit\_no\_op}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{submit\_no\_op()}{submit\_no\_op()}}
+{\footnotesize\ttfamily \label{class_ring_a4712784c26b5dbf5947b744c6fda3fa6} 
+void Ring\+::submit\+\_\+no\+\_\+op (\begin{DoxyParamCaption}\item[{unsigned long}]{user\+\_\+data}{}\end{DoxyParamCaption}) const}
+
+
+
+Submit a no-\/op operation with user\+\_\+data set. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em user\+\_\+data} & User-\/defined data associated with the operation. \\
+\hline
+\end{DoxyParams}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em std\+::runtime\+\_\+error} & if submission queue is full. \\
+\hline
+\end{DoxyExceptions}
+\Hypertarget{class_ring_a170a887add5e93f80417e702e78abac4}\index{Ring@{Ring}!submit\_socket@{submit\_socket}}
+\index{submit\_socket@{submit\_socket}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{submit\_socket()}{submit\_socket()}}
+{\footnotesize\ttfamily \label{class_ring_a170a887add5e93f80417e702e78abac4} 
+void Ring\+::submit\+\_\+socket (\begin{DoxyParamCaption}\item[{int}]{domain}{, }\item[{int}]{type}{, }\item[{int}]{protocol}{, }\item[{unsigned int}]{file\+\_\+slot}{, }\item[{unsigned long}]{user\+\_\+data}{, }\item[{unsigned int}]{flags}{}\end{DoxyParamCaption}) const}
+
+
+
+Submit a socket creation operation to the submission queue. 
+
+This operation creates a new socket using the specified domain, type, and protocol. The created socket can optionally be assigned a fixed file descriptor slot using {\ttfamily file\+\_\+slot}.
+
+
+\begin{DoxyParams}{Parameters}
+{\em domain} & Communication domain (e.\+g., AF\+\_\+\+INET, AF\+\_\+\+UNIX). \\
+\hline
+{\em type} & Socket type (e.\+g., SOCK\+\_\+\+STREAM, SOCK\+\_\+\+DGRAM). Can be OR\textquotesingle{}d with SOCK\+\_\+\+NONBLOCK and/or SOCK\+\_\+\+CLOEXEC. \\
+\hline
+{\em protocol} & Protocol (usually 0 for default). \\
+\hline
+{\em file\+\_\+slot} & Fixed file descriptor slot (0 to disable fixed files). \\
+\hline
+{\em user\+\_\+data} & User-\/defined data to associate with this operation (used for completion). \\
+\hline
+{\em flags} & Submission queue entry flags (e.\+g., IOSQE\+\_\+\+IO\+\_\+\+LINK to chain requests). \\
+\hline
+\end{DoxyParams}
+\Hypertarget{class_ring_aa1c59a8a7af6437414f010cce15cd80d}\index{Ring@{Ring}!submit\_timeout@{submit\_timeout}}
+\index{submit\_timeout@{submit\_timeout}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{submit\_timeout()}{submit\_timeout()}}
+{\footnotesize\ttfamily \label{class_ring_aa1c59a8a7af6437414f010cce15cd80d} 
+void Ring\+::submit\+\_\+timeout (\begin{DoxyParamCaption}\item[{\+\_\+\+\_\+kernel\+\_\+timespec \texorpdfstring{$\ast$}{*}}]{spec}{, }\item[{unsigned int}]{count}{, }\item[{unsigned int}]{flags}{, }\item[{unsigned long}]{id}{}\end{DoxyParamCaption}) const}
+
+
+
+Submit a timeout operation to the submission queue. 
+
+This method schedules a timeout with the specified duration and flags. The timeout will trigger after {\ttfamily count} occurrences of the specified time period given by {\ttfamily spec} (typically 1 for a single timeout).
+
+
+\begin{DoxyParams}{Parameters}
+{\em spec} & Pointer to a {\ttfamily \+\_\+\+\_\+kernel\+\_\+timespec} struct specifying the timeout duration. \\
+\hline
+{\em count} & Number of timeout expirations before triggering (usually 1). \\
+\hline
+{\em flags} & Timeout flags controlling behavior (e.\+g., {\ttfamily IORING\+\_\+\+TIMEOUT\+\_\+\+ABS}, {\ttfamily IORING\+\_\+\+TIMEOUT\+\_\+\+UPDATE}, {\ttfamily IORING\+\_\+\+TIMEOUT\+\_\+\+CLOCK\+\_\+\+MONOTONIC}). \\
+\hline
+{\em id} & User-\/defined identifier for this timeout operation, stored in the submission queue entry\textquotesingle{}s {\ttfamily user\+\_\+data} field.\\
+\hline
+\end{DoxyParams}
+\begin{DoxyNote}{Note}
+The caller is responsible for ensuring that {\ttfamily spec} remains valid until the timeout expires or is removed. 
+\end{DoxyNote}
+\Hypertarget{class_ring_a0a33d8c5190fbce995fdbbf653cf5b4c}\index{Ring@{Ring}!submit\_timeout\_remove@{submit\_timeout\_remove}}
+\index{submit\_timeout\_remove@{submit\_timeout\_remove}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{submit\_timeout\_remove()}{submit\_timeout\_remove()}}
+{\footnotesize\ttfamily \label{class_ring_a0a33d8c5190fbce995fdbbf653cf5b4c} 
+void Ring\+::submit\+\_\+timeout\+\_\+remove (\begin{DoxyParamCaption}\item[{unsigned int}]{flags}{, }\item[{unsigned long}]{id}{}\end{DoxyParamCaption}) const}
+
+
+
+Submit a timeout removal operation to cancel a previously submitted timeout. 
+
+This operation attempts to cancel the timeout identified by the given {\ttfamily id}. The kernel uses the {\ttfamily id} to match the timeout to remove, which corresponds to the {\ttfamily user\+\_\+data} value originally supplied during the {\ttfamily submit\+\_\+timeout} call.
+
+
+\begin{DoxyParams}{Parameters}
+{\em flags} & Flags controlling the removal operation (typically 0). \\
+\hline
+{\em id} & The user-\/defined identifier of the timeout to remove.\\
+\hline
+\end{DoxyParams}
+\begin{DoxyNote}{Note}
+Successful removal generates a completion event with result code {\ttfamily -\/ECANCELED}. 
+\end{DoxyNote}
+\Hypertarget{class_ring_a965a5dd2c6a695593354390fe94e6c86}\index{Ring@{Ring}!submit\_timeout\_update@{submit\_timeout\_update}}
+\index{submit\_timeout\_update@{submit\_timeout\_update}!Ring@{Ring}}
+\doxysubsubsection{\texorpdfstring{submit\_timeout\_update()}{submit\_timeout\_update()}}
+{\footnotesize\ttfamily \label{class_ring_a965a5dd2c6a695593354390fe94e6c86} 
+void Ring\+::submit\+\_\+timeout\+\_\+update (\begin{DoxyParamCaption}\item[{\+\_\+\+\_\+kernel\+\_\+timespec \texorpdfstring{$\ast$}{*}}]{next}{, }\item[{unsigned int}]{flags}{, }\item[{unsigned long}]{id}{}\end{DoxyParamCaption}) const}
+
+
+
+Submit a timeout update operation to modify an existing timeout. 
+
+This updates the expiration time of an existing timeout identified by {\ttfamily id} to the new time specified by {\ttfamily next}. The update uses the {\ttfamily IORING\+\_\+\+TIMEOUT\+\_\+\+UPDATE} flag.
+
+
+\begin{DoxyParams}{Parameters}
+{\em next} & Pointer to a {\ttfamily \+\_\+\+\_\+kernel\+\_\+timespec} specifying the new timeout duration. \\
+\hline
+{\em flags} & Flags controlling the update behavior. \\
+\hline
+{\em id} & The user-\/defined identifier of the timeout to update (matches the original timeout\textquotesingle{}s {\ttfamily user\+\_\+data}).\\
+\hline
+\end{DoxyParams}
+\begin{DoxyNote}{Note}
+The kernel expects the update to be encoded as a timeout removal operation with the {\ttfamily IORING\+\_\+\+TIMEOUT\+\_\+\+UPDATE} flag set and {\ttfamily off} field set to {\ttfamily next}. The caller must ensure the {\ttfamily next} pointer remains valid until the update is processed. 
+\end{DoxyNote}
+
+
+The documentation for this class was generated from the following files\+:\begin{DoxyCompactItemize}
+\item 
+src/Ring.\+hpp\item 
+src/Ring.\+cpp\end{DoxyCompactItemize}

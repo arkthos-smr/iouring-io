@@ -1,0 +1,42 @@
+\doxysection{Ring\+Config.\+hpp}
+\hypertarget{_ring_config_8hpp_source}{}\label{_ring_config_8hpp_source}\index{src/RingConfig.hpp@{src/RingConfig.hpp}}
+
+\begin{DoxyCode}{0}
+\DoxyCodeLine{00001\ \textcolor{preprocessor}{\#pragma\ once}}
+\DoxyCodeLine{00002\ }
+\DoxyCodeLine{00003\ \textcolor{preprocessor}{\#include\ <chrono>}}
+\DoxyCodeLine{00004\ }
+\DoxyCodeLine{00009\ \textcolor{keyword}{enum\ class}\ RingIOType\ \{}
+\DoxyCodeLine{00010\ \ \ \ \ INTERRUPT,\ }
+\DoxyCodeLine{00011\ \ \ \ \ SQPOLL,\ \ \ \ }
+\DoxyCodeLine{00012\ \ \ \ \ IOPOLL\ \ \ \ \ }
+\DoxyCodeLine{00013\ \};}
+\DoxyCodeLine{00014\ }
+\DoxyCodeLine{00023\ \textcolor{keyword}{class\ }\mbox{\hyperlink{class_ring_config_a76e6ff498bfcb1486d254c357629fad8}{RingConfig}}\ \{}
+\DoxyCodeLine{00024\ \ \ \ \ RingIOType\ type;\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00025\ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ size;\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00026\ \ \ \ \ \textcolor{keywordtype}{int}\ pin;\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00027\ \ \ \ \ \textcolor{keywordtype}{bool}\ submit\_all;\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00028\ \ \ \ \ std::chrono::microseconds\ sq\_thread\_idle;\ \ \ }
+\DoxyCodeLine{00029\ }
+\DoxyCodeLine{00030\ \textcolor{keyword}{public}:}
+\DoxyCodeLine{00039\ \ \ \ \ \textcolor{keyword}{explicit}\ \mbox{\hyperlink{class_ring_config_a76e6ff498bfcb1486d254c357629fad8}{RingConfig}}(}
+\DoxyCodeLine{00040\ \ \ \ \ \ \ \ \ RingIOType\ type,}
+\DoxyCodeLine{00041\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ size,}
+\DoxyCodeLine{00042\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{int}\ pin,}
+\DoxyCodeLine{00043\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{bool}\ submit\_all,}
+\DoxyCodeLine{00044\ \ \ \ \ \ \ \ \ std::chrono::microseconds\ sq\_thread\_idle\ =\ std::chrono::microseconds(1000000)}
+\DoxyCodeLine{00045\ \ \ \ \ );}
+\DoxyCodeLine{00046\ }
+\DoxyCodeLine{00051\ \ \ \ \ [[nodiscard]]\ RingIOType\ \mbox{\hyperlink{class_ring_config_a3df00fa05dd04a09956e4e914aaef83f}{get\_type}}()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00052\ }
+\DoxyCodeLine{00057\ \ \ \ \ [[nodiscard]]\ \textcolor{keywordtype}{unsigned}\ \textcolor{keywordtype}{int}\ \mbox{\hyperlink{class_ring_config_a90d878c3b6748f969b1a43126c572a05}{get\_size}}()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00058\ }
+\DoxyCodeLine{00063\ \ \ \ \ [[nodiscard]]\ \textcolor{keywordtype}{int}\ \mbox{\hyperlink{class_ring_config_a823f3de2a9c1dc4c0b584f5d72a1c3bf}{get\_pin}}()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00064\ }
+\DoxyCodeLine{00069\ \ \ \ \ [[nodiscard]]\ \textcolor{keywordtype}{bool}\ \mbox{\hyperlink{class_ring_config_a7618bb881f73c7fef643ab6222861832}{get\_submit\_all}}()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00070\ }
+\DoxyCodeLine{00075\ \ \ \ \ [[nodiscard]]\ std::chrono::microseconds\ \mbox{\hyperlink{class_ring_config_a0a56ddc4f555395447db040e5b4f8ed3}{get\_sq\_thread\_idle}}()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00076\ \};}
+
+\end{DoxyCode}
