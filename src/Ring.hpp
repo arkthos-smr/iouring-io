@@ -70,6 +70,11 @@ struct FutexWaitEntry {
 inline std::atomic RUNNING{true};
 
 
+constexpr unsigned long long ADDR_MASK = (static_cast<unsigned long long>(1) << 48) - 1;
+constexpr unsigned long long OP_SHIFT = 1ULL << 48;
+
+
+
 
 constexpr unsigned MAX_FILES = 128;
 
@@ -90,22 +95,22 @@ do { \
 
 #define submit_with(op, s_flags, s_data) \
 do {                                     \
-    (s_data)->opcode = (op); \
+    static_assert(std::is_pointer_v<decltype(s_data)>, "s_data must be a pointer"); \
     submit( \
         .opcode = (op), \
         .flags = (s_flags), \
-        .user_data = reinterpret_cast<unsigned long>(s_data) \
+        .user_data = reinterpret_cast<unsigned long long>(s_data) | ((op) * OP_SHIFT) \
     ); \
 } while(0)
 
 #define submit_with_args(op, s_flags, s_data, ...) \
 do { \
-    (s_data)->opcode = (op); \
+    static_assert(std::is_pointer_v<decltype(s_data)>, "s_data must be a pointer"); \
     submit( \
         .opcode = (op), \
         .flags = (s_flags), \
         __VA_ARGS__, \
-        .user_data = reinterpret_cast<unsigned long>(s_data) \
+        .user_data = reinterpret_cast<unsigned long long>(s_data) | ((op) * OP_SHIFT) \
     ); \
 } while (0)
 
@@ -168,7 +173,7 @@ do { \
         .addr = reinterpret_cast<unsigned long>(buffer_pool), \
         .len = buffer_size, \
         .fd = buffer_count, \
-        .buf_group = buffer_group \
+        .buf_group = buffer_group, \
         .off = start_index \
 )
 
@@ -280,35 +285,14 @@ do { \
         .zcrx_ifq_idx = zcrx_index                                          \
     )
 
+#define on_no_op(block)     if (c_opcode == IORING_OP_NOP)    { block }
+#define on_socket(block)    if (c_opcode == IORING_OP_SOCKET) { block }
+#define on_listen(block)    if (c_opcode == IORING_OP_LISTEN) { block }
+#define on_bind(block)      if (c_opcode == IORING_OP_BIND)   { block }
+#define on_close(block)     if (c_opcode == IORING_OP_CLOSE)  { block }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#define on_no_op(block)     if (c_data->opcode == IORING_OP_NOP)    { block }
-#define on_socket(block)    if (c_data->opcode == IORING_OP_SOCKET) { block }
-#define on_listen(block)    if (c_data->opcode == IORING_OP_LISTEN) { block }
-#define on_bind(block)      if (c_data->opcode == IORING_OP_BIND)   { block }
-#define on_close(block)     if (c_data->opcode == IORING_OP_CLOSE)  { block }
-
-#define ring_init(code) do { code } while(0);
-#define ring_block(code) do { code } while(0);
+#define ring_init(code) do { code } while(0)
+#define ring_block(code) do { code } while(0)
 
 #define run_ring(size, pin, init, block) \
 do { \
@@ -354,7 +338,8 @@ do { \
         if (_r_cq_head_local == _r_tail) continue; \
         while (_r_cq_head_local != _r_tail) { \
             const io_uring_cqe& completion = _r_cqes[_r_cq_head_local++ & _r_cq_ring_mask]; \
-            UserData* c_data = reinterpret_cast<UserData*>(completion.user_data); \
+            unsigned char c_opcode = (completion.user_data) >> 48; \
+            void* c_data = reinterpret_cast<void*>((completion.user_data) & ADDR_MASK); \
             block \
         } \
         _r_cq_head.store(_r_cq_head_local, std::memory_order_release); \
