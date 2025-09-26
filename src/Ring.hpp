@@ -72,17 +72,8 @@ inline std::atomic RUNNING{true};
 
 constexpr unsigned long long ADDR_MASK = (static_cast<unsigned long long>(1) << 48) - 1;
 constexpr unsigned long long OP_SHIFT = 1ULL << 48;
-
-
-
-
 constexpr unsigned MAX_FILES = 128;
 
-
-struct UserData {
-    unsigned char opcode;
-
-};
 
 #define submit(...) \
 do { \
@@ -124,14 +115,6 @@ do { \
         .addr2 = target_address_len \
     )
 
-#define submit_accept(socket, client_address, client_address_len, s_flags, s_data) \
-    submit_with_args(IORING_OP_ACCEPT, s_flags, s_data, \
-        .fd = socket, \
-        .addr = reinterpret_cast<unsigned long>(client_address), \
-        .addr2 = reinterpret_cast<unsigned long>(client_address_len), \
-        .ioprio = IORING_ACCEPT_MULTISHOT \
-    )
-
 #define submit_socket(domain, type, protocol, s_flags, s_data) \
     submit_with_args(IORING_OP_SOCKET, s_flags, s_data, \
         .fd = (domain), \
@@ -139,33 +122,34 @@ do { \
         .len = (protocol) \
     )
 
-#define submit_set_sockopt(fd, level, optname, optlen, optval, cmd_flags, s_flags, s_data) \
+#define submit_set_sockopt(socket, opt_level, opt_name, opt_len, opt_val, cmd_flags, s_flags, s_data) \
     submit_with_args(IORING_OP_URING_CMD, s_flags, s_data, \
-        .optval = reinterpret_cast<unsigned long>(optval), \
-        .optname = (optname), \
-        .optlen = (optlen), \
-        .level = (level), \
+        .fd = socket, \
+        .optval = reinterpret_cast<unsigned long>(opt_val), \
+        .optname = (opt_name), \
+        .optlen = (opt_len), \
+        .level = (opt_level), \
         .cmd_op = SOCKET_URING_OP_SETSOCKOPT, \
         .uring_cmd_flags = cmd_flags \
     )
 
-#define submit_listen(fd, backlog, s_flags, s_data) \
+#define submit_listen(socket, backlog, s_flags, s_data) \
     submit_with_args(IORING_OP_LISTEN, s_flags, s_data, \
-        .fd = (fd), \
+        .fd = socket, \
         .len = (backlog) \
     )
 
-#define submit_bind(fd, address, address_len, s_flags, s_data) \
+#define submit_bind(socket, address, address_len, s_flags, s_data) \
     submit_with_args(IORING_OP_BIND, s_flags, s_data, \
-        .fd = (fd), \
+        .fd = socket, \
         .addr = reinterpret_cast<unsigned long>(address), \
         .addr2 = (address_len) \
     )
 
-#define submit_close(fd, slot, s_flags, s_data) \
+#define submit_close(socket, slot, s_flags, s_data) \
     submit_with_args(IORING_OP_CLOSE, s_flags, s_data, \
-        .fd = (fd), \
-        .file_slot = (slot) \
+        .fd = socket, \
+        .file_index = (slot) \
     )
 
 #define submit_provide_buffers(buffer_pool, buffer_size, buffer_count, buffer_group, start_index, s_flags, s_data) \
@@ -231,11 +215,11 @@ do { \
         .msg_ring_flags = msg_ring_flags                                                           \
     )
 
-#define submit_accept_multishot(fd, addr, addr_len, s_flags, s_data) \
+#define submit_accept_multishot(socket, cli_addr, cli_addr_len, s_flags, s_data) \
     submit_with_args(IORING_OP_ACCEPT, s_flags, s_data,              \
-        .fd = fd,                                                    \
-        .addr = reinterpret_cast<unsigned long>(addr),               \
-        .addr2 = reinterpret_cast<unsigned long>(addr_len),          \
+        .fd = socket,                                                    \
+        .addr = reinterpret_cast<unsigned long>(cli_addr),               \
+        .addr2 = reinterpret_cast<unsigned long>(cli_addr_len),          \
         .ioprio = IORING_ACCEPT_MULTISHOT                            \
     )
 
@@ -248,14 +232,14 @@ do { \
         .ioprio = IORING_RECVSEND_FIXED_BUF                                    \
     )
 
-#define submit_send_zc(fd_slot, buf, len, addr, addr_len, buf_index, msg_flags, zc_flags, s_flags, s_data) \
+#define submit_send_zc(fd_slot, buf, len, rem_addr, rem_addr_len, buf_index, msg_flags, zc_flags, s_flags, s_data) \
     submit_with_args(IORING_OP_SEND_ZC, s_flags | IOSQE_FIXED_FILE, s_data,                                \
         .fd = fd_slot,                                                                                     \
         .addr = reinterpret_cast<unsigned long>(buf),                                                      \
         .len = len,                                                                                        \
         .msg_flags = zc_flags,                                                                             \
-        .addr2 = reinterpret_cast<unsigned long>(addr),                                                    \
-        .addr_len = addr_len,                                                                              \
+        .addr2 = reinterpret_cast<unsigned long>(rem_addr),                                                    \
+        .addr_len = rem_addr_len,                                                                              \
         .buf_index = buf_index,                                                                            \
         .msg_flags = msg_flags,                                                                            \
         .ioprio = zc_flags | IORING_RECVSEND_FIXED_BUF                                                     \
@@ -285,14 +269,19 @@ do { \
         .zcrx_ifq_idx = zcrx_index                                          \
     )
 
-#define on_no_op(block)     if (c_opcode == IORING_OP_NOP)    { block }
-#define on_socket(block)    if (c_opcode == IORING_OP_SOCKET) { block }
-#define on_listen(block)    if (c_opcode == IORING_OP_LISTEN) { block }
-#define on_bind(block)      if (c_opcode == IORING_OP_BIND)   { block }
-#define on_close(block)     if (c_opcode == IORING_OP_CLOSE)  { block }
+#define on_listen(block)   if (c_opcode == IORING_OP_LISTEN) { block }
+#define on_bind(block)   if (c_opcode == IORING_OP_BIND) { block }
+#define on_cmd(block)       if (c_opcode == IORING_OP_URING_CMD)  { block }
+#define on_no_op(block)     if (c_opcode == IORING_OP_NOP)        { block }
+#define on_socket(block)    if (c_opcode == IORING_OP_SOCKET)     { block }
+#define on_listen(block)    if (c_opcode == IORING_OP_LISTEN)     { block }
+#define on_bind(block)      if (c_opcode == IORING_OP_BIND)       { block }
+#define on_close(block)     if (c_opcode == IORING_OP_CLOSE)      { block }
+#define on_accept(block)    if (c_opcode == IORING_OP_ACCEPT)     { block }
+#define on_connect(block)   if (c_opcode == IORING_OP_CONNECT)     { block }
 
-#define ring_init(code) do { code } while(0)
-#define ring_block(code) do { code } while(0)
+#define ring_init(code) do { code } while(0);
+#define ring_block(code) do { code } while(0);
 
 #define run_ring(size, pin, init, block) \
 do { \

@@ -14,7 +14,10 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 file(GLOB SOURCES "src/*.cpp")
-add_executable(arkthos-iouring ${SOURCES})
+add_executable(arkthos-iouring ${SOURCES}
+        src/Raft.cpp
+        src/Raft.h
+        src/Raft.h)
 
 # Use the sanitized headers you installed from the full kernel source
 set(KERNEL_HEADERS_SANITIZED /usr/include/linux-6.16.7/include)
