@@ -269,6 +269,8 @@ do { \
         .zcrx_ifq_idx = zcrx_index                                          \
     )
 
+#define on_futex_wake(block)    if (c_opcode == IORING_OP_FUTEX_WAKE) { block }
+#define on_futex_wait(block)    if (c_opcode == IORING_OP_FUTEX_WAIT) { block }
 #define on_listen(block)   if (c_opcode == IORING_OP_LISTEN) { block }
 #define on_bind(block)   if (c_opcode == IORING_OP_BIND) { block }
 #define on_cmd(block)       if (c_opcode == IORING_OP_URING_CMD)  { block }
@@ -281,9 +283,10 @@ do { \
 #define on_connect(block)   if (c_opcode == IORING_OP_CONNECT)     { block }
 
 #define ring_init(code) do { code } while(0);
-#define ring_block(code) do { code } while(0);
+#define ring_loop(code) do { code } while(0);
+#define ring_completions(code) do { code } while(0);
 
-#define run_ring(size, pin, init, block) \
+#define run_ring(size, pin, init, loop, block) \
 do { \
     static_assert(std::is_integral_v<decltype(size)>, "size must be an integer"); \
     static_assert(std::is_integral_v<decltype(pin)>, "pin must be an integer");   \
@@ -323,6 +326,7 @@ do { \
     if (_r_sq_flags->load(std::memory_order_relaxed) & IORING_SQ_NEED_WAKEUP) \
         io_uring_enter(_r_ring_fd, 0, 0, IORING_ENTER_SQ_WAKEUP); \
     while (RUNNING.load(std::memory_order_relaxed)) { \
+        loop \
         const auto _r_tail = _r_cq_tail.load(std::memory_order_acquire); \
         if (_r_cq_head_local == _r_tail) continue; \
         while (_r_cq_head_local != _r_tail) { \

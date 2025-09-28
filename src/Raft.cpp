@@ -18,10 +18,11 @@ void tune_socket(const int fd) {
         close(fd);
         throw std::runtime_error("setsockopt TCP_QUICKACK failed");
     }
-
 }
 
+template<size_t log_size, size_t message_size>
 void run_raft_tcp(
+    const unsigned int max_message_size,
     const unsigned int threads,
     const unsigned int connections,
     const unsigned int pipes,
@@ -100,20 +101,42 @@ void run_raft_tcp(
         if (fcntl(client_fd, F_SETFL, flags | O_NONBLOCK) == -1) throw std::runtime_error("set fcntl failed");
     }
 
-    local_workers.emplace_back([&]() {
-       while (RUNNING.load(std::memory_order_relaxed)) {
+    std::atomic<unsigned char> acks [log_size];
+    char log [log_size][message_size];
 
-       }
+    for (size_t i = 0; i < log_size; ++i) {
+        acks[i] = std::atomic<unsigned char>(0);
+        memset(log[i], 0, message_size);
+    }
+
+
+    local_workers.emplace_back([&]() {
+            register unsigned int index = 0;
+            while (RUNNING.load(std::memory_order_relaxed)) {
+                run_ring(
+                    4096, 1,
+                    ring_init(),
+                    ring_loop(
+
+                    ),
+                    ring_completions()
+                );
+            }
     });
 
     for (int threadId = 0; threadId < threads; threadId++) {
         local_workers.emplace_back([connections, pipes, node_id, leader_id, &peers]() {
             fprintf(stderr, "Node id: %d\n", node_id);
-            auto host_address = peers[node_id];
             run_ring(
                 4096, 1,
                 ring_init(),
-                ring_block()
+                ring_loop(),
+                ring_completions(
+
+                    on_futex_wake(
+
+                    )
+                )
             );
         });
     }
