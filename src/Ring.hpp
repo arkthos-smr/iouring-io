@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <atomic>
+#include <iostream>
 #include <linux/io_uring.h>
 #include <sys/mman.h>
 #include <vector>
@@ -47,6 +48,7 @@ __attribute__((always_inline)) inline int io_uring_register(
         err_msg += " (" + std::to_string(result) + ")\n";
         throw std::runtime_error(err_msg);
     }
+    std::cout << "Registered with: " << result << std::endl;
     return result;
 }
 
