@@ -27,8 +27,8 @@ int main() {
         Address { "127.0.0.1", 6984 },
         Address { "127.0.0.1", 6982 }
     };
-    workers.emplace_back([&](){     run_raft_tcp<100,100>(1, 10, 1, 0, 0, peers); });
-    workers.emplace_back([&]() { run_raft_tcp<100,100>(1, 10, 0, 1, 0, peers); });
+    workers.emplace_back([&](){ run_raft_tcp<100,100, 1>(10, 1, 0, 0, peers); });
+    workers.emplace_back([&]() { run_raft_tcp<100,100, 1>(10, 0, 1, 0, peers); });
 
     // std::vector<std::thread> workers{};
     // workers.emplace_back([] {

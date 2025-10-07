@@ -10,7 +10,7 @@
 #include <fcntl.h>
 
 inline void tune_socket(const int fd) {
-    int flag = 1;
+    constexpr int flag = 1;
     if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) < 0) {
         close(fd);
         throw std::runtime_error("setsockopt TCP_NODELAY failed");
@@ -37,27 +37,49 @@ struct Address {
     }
 };
 
-struct WriteEntry {
-    int index, amount;
-};
-
 struct Connection {
     std::atomic<bool> is_writing { false };
     std::atomic<int> write_head { 0 };
     std::atomic<int> write_tail { 0 };
-    WriteEntry writes[100];
+    char* writes[100];
 };
 
-template<size_t log_size, size_t message_size>
+struct WorkerContext {
+    char* buffer_pool;
+    std::atomic<int> buffer_grabber_head;
+    std::vector<int> buffer_grabber;
+    std::vector<std::atomic<int>> buffer_references;
+    std::vector<iovec> iovecs;
+
+    WorkerContext(size_t buffer_count, size_t message_size)
+        : buffer_pool(new char[buffer_count * message_size]),
+          buffer_grabber_head(buffer_count),
+          buffer_grabber(buffer_count),
+          buffer_references(buffer_count),
+          iovecs(buffer_count)
+    {
+        for (size_t i = 0; i < buffer_count; ++i) {
+            iovecs[i].iov_base = buffer_pool + i * message_size;
+            iovecs[i].iov_len = message_size;
+            buffer_grabber[i] = static_cast<int>(i);
+            buffer_references[i] = 0;
+        }
+    }
+
+    ~WorkerContext() {
+        delete[] buffer_pool;
+    }
+};
+
+template<size_t log_size, size_t message_size, size_t threads>
 void run_raft_tcp(
-    const unsigned int threads,
     const unsigned int connections,
     const unsigned int pipes,
     const unsigned char node_id,
     const unsigned char leader_id,
     std::vector<Address> &peers
 ) {
-       std::vector<std::thread> local_workers;
+    std::vector<std::thread> local_workers;
     local_workers.reserve(threads);
     auto node_address = peers[node_id];
     std::vector<int> active_connections;
@@ -75,7 +97,7 @@ void run_raft_tcp(
 
                     tune_socket(client_socket);
 
-                    fprintf(stderr, "Connecting from nodeId=%d\n", node_id);
+                    // fprintf(stderr, "Connecting from nodeId=%d\n", node_id);
                     if (const auto peer_addr = reinterpret_cast<sockaddr *>(&peers[peerId].addr); connect(client_socket, peer_addr, sizeof(sockaddr_in)) < 0) {
                         close(client_socket);
                         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -92,7 +114,7 @@ void run_raft_tcp(
             throw std::runtime_error("Failed to create server socket");
         }
 
-        int flag = 1;
+        constexpr int flag = 1;
         if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
             close(server_socket);
             throw std::runtime_error("error setting reuseaddr opt");
@@ -108,8 +130,6 @@ void run_raft_tcp(
             close(server_socket);
             throw std::runtime_error("listen failed");
         }
-
-        fprintf(stderr, "Accepting connections on node_id=%d\n", node_id);
 
         while (RUNNING.load(std::memory_order_relaxed) && active_connections.size() != connections) {
             sockaddr_in cli_addr{};
@@ -137,27 +157,19 @@ void run_raft_tcp(
         memset(log[i], 0, message_size);
     }
 
-    for (int threadId = 0; threadId < threads; threadId++) {
-        local_workers.emplace_back([connections, pipes, node_id, leader_id, &peers]() {
-            char* buffer_pool = new char[buffer_count * message_size];
-            std::atomic<int> buffer_grabber_head = buffer_count;
-            int buffer_grabber[buffer_count];
-            std::atomic<int> buffer_references[buffer_count];
+    WorkerContext* contexts[threads] = {nullptr};
 
-            iovec iovecs[buffer_count];
-            for (int i = 0; i < buffer_count; ++i) {
-                iovecs[i].iov_base = buffer_pool + i * message_size;
-                iovecs[i].iov_len = message_size;
-                buffer_grabber[i] = i;
-                buffer_references[i] = 0;
-            }
+    for (int threadId = 0; threadId < threads; threadId++) {
+        local_workers.emplace_back([&, connections, pipes, node_id, leader_id]() {
+            const auto ctx = new WorkerContext(buffer_count, message_size);
+            contexts[threadId] = ctx;
 
             fprintf(stderr, "Node id: %d\n", node_id);
             run_ring(
                 4096, 1,
                 ring_init(
 
-                    io_uring_register(_r_ring_fd, IORING_REGISTER_BUFFERS, iovecs, buffer_count);
+                    io_uring_register(_r_ring_fd, IORING_REGISTER_BUFFERS, ctx->iovecs.data(), buffer_count);
                 ),
                 ring_loop(),
                 ring_completions(
@@ -165,12 +177,18 @@ void run_raft_tcp(
                 )
             );
 
-            delete[] buffer_pool;
+            std::cout << "Done running ring" << std::endl;
         });
     }
 
+    std::cout << "Done?" << std::endl;
+
     for (auto &worker : local_workers) {
         worker.join();
+    }
+
+    for (int i = 0; i < threads; i++) {
+        delete contexts[i];
     }
 }
 

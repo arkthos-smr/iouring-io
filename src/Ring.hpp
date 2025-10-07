@@ -42,6 +42,7 @@ __attribute__((always_inline)) inline int io_uring_register(
     const unsigned int nr_args
 ) {
     const int result = syscall(__NR_io_uring_register, ring_fd, op, arg, nr_args);
+    std::cout << "Registering" << std::endl;
     if (result < 0) {
         std::string err_msg = "io_uring_register buffers failed: ";
         err_msg += strerror(-result);
