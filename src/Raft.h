@@ -9,16 +9,43 @@
 #include <netinet/tcp.h>
 #include <fcntl.h>
 
-inline void tune_socket(const int fd) {
-    constexpr int flag = 1;
-    if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) < 0) {
-        close(fd);
-        throw std::runtime_error("setsockopt TCP_NODELAY failed");
+
+inline void tune_udp_socket(const int fd) {
+    if (fd < 0) {
+        throw std::invalid_argument("Invalid socket descriptor");
     }
 
-    if (setsockopt(fd, IPPROTO_TCP, TCP_QUICKACK, &flag, sizeof(flag)) < 0) {
+    int bufsize = 1 << 20; // 1 MB
+
+    // Increase send buffer
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bufsize, sizeof(bufsize)) < 0) {
         close(fd);
-        throw std::runtime_error("setsockopt TCP_QUICKACK failed");
+        throw std::runtime_error("setsockopt(SO_SNDBUF) failed: " + std::string(std::strerror(errno)));
+    }
+
+    // Increase receive buffer
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bufsize, sizeof(bufsize)) < 0) {
+        close(fd);
+        throw std::runtime_error("setsockopt(SO_RCVBUF) failed: " + std::string(std::strerror(errno)));
+    }
+
+    // Mark as low latency (IP_TOS = IPTOS_LOWDELAY)
+    constexpr int tos = 0x10;
+    if (setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)) < 0) {
+        close(fd);
+        throw std::runtime_error("setsockopt(IP_TOS) failed: " + std::string(std::strerror(errno)));
+    }
+
+    // Make socket non-blocking
+    const int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1) {
+        close(fd);
+        throw std::runtime_error("fcntl(F_GETFL) failed: " + std::string(std::strerror(errno)));
+    }
+
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
+        close(fd);
+        throw std::runtime_error("fcntl(F_SETFL, O_NONBLOCK) failed: " + std::string(std::strerror(errno)));
     }
 }
 
@@ -37,139 +64,80 @@ struct Address {
     }
 };
 
-struct Connection {
-    std::atomic<bool> is_writing { false };
-    std::atomic<int> write_head { 0 };
-    std::atomic<int> write_tail { 0 };
-    char* writes[100];
-};
-
-struct WorkerContext {
-    char* buffer_pool;
-    std::atomic<int> buffer_grabber_head;
-    std::vector<int> buffer_grabber;
-    std::vector<std::atomic<int>> buffer_references;
-    std::vector<iovec> iovecs;
-
-    WorkerContext(size_t buffer_count, size_t message_size)
-        : buffer_pool(new char[buffer_count * message_size]),
-          buffer_grabber_head(buffer_count),
-          buffer_grabber(buffer_count),
-          buffer_references(buffer_count),
-          iovecs(buffer_count)
-    {
-        for (size_t i = 0; i < buffer_count; ++i) {
-            iovecs[i].iov_base = buffer_pool + i * message_size;
-            iovecs[i].iov_len = message_size;
-            buffer_grabber[i] = static_cast<int>(i);
-            buffer_references[i] = 0;
-        }
-    }
-
-    ~WorkerContext() {
-        delete[] buffer_pool;
-    }
-};
-
 template<size_t log_size, size_t message_size, size_t threads>
-void run_raft_tcp(
+void run_raft_udp(
     const unsigned int connections,
     const unsigned int pipes,
     const unsigned char node_id,
     const unsigned char leader_id,
     std::vector<Address> &peers
 ) {
+    const auto total_sockets = 1 + ((peers.size() - 1) * connections);
+    int all_sockets[total_sockets];
+
     std::vector<std::thread> local_workers;
     local_workers.reserve(threads);
     auto node_address = peers[node_id];
-    std::vector<int> active_connections;
+
+    const auto server_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (server_socket < 0) {
+        throw std::runtime_error("Failed to create server socket");
+    }
+
+    constexpr int flag = 1;
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
+        close(server_socket);
+        throw std::runtime_error("error setting reuseaddr opt");
+    }
+
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
+        close(server_socket);
+        throw std::runtime_error("Failed to set SO_REUSEPORT");
+    }
+
+    if (bind(server_socket, reinterpret_cast<sockaddr*>(&node_address.addr), sizeof(node_address.addr)) < 0) {
+        close(server_socket);
+        throw std::runtime_error("bind failed");
+    }
+
+    tune_udp_socket(server_socket);
+    all_sockets[0] = server_socket;
 
     if (leader_id == node_id) {
-        for (int peerId = 0; peerId < peers.size(); peerId++) {
-            if (peerId == node_id) continue;
-            for (int connId = 0; connId < connections; connId++) {
-                while (RUNNING.load(std::memory_order_relaxed)) {
-                    const auto client_socket = socket(AF_INET, SOCK_STREAM, 0);
-
-                    if (client_socket < 0) {
-                        throw std::runtime_error("Failed to create server socket");
-                    }
-
-                    tune_socket(client_socket);
-
-                    // fprintf(stderr, "Connecting from nodeId=%d\n", node_id);
-                    if (const auto peer_addr = reinterpret_cast<sockaddr *>(&peers[peerId].addr); connect(client_socket, peer_addr, sizeof(sockaddr_in)) < 0) {
-                        close(client_socket);
-                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                    } else {
-                        active_connections.emplace_back(client_socket);
-                        break;
-                    }
-                }
-            }
-        }
-    } else {
-        const auto server_socket = socket(AF_INET, SOCK_STREAM, 0);
-        if (server_socket < 0) {
-            throw std::runtime_error("Failed to create server socket");
-        }
-
-        constexpr int flag = 1;
-        if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
-            close(server_socket);
-            throw std::runtime_error("error setting reuseaddr opt");
-        }
-        tune_socket(server_socket);
-
-        if (bind(server_socket, reinterpret_cast<sockaddr*>(&node_address.addr), sizeof(node_address.addr)) < 0) {
-            close(server_socket);
-            throw std::runtime_error("bind failed");
-        }
-
-        if (listen(server_socket, SOMAXCONN) < 0) {
-            close(server_socket);
-            throw std::runtime_error("listen failed");
-        }
-
-        while (RUNNING.load(std::memory_order_relaxed) && active_connections.size() != connections) {
-            sockaddr_in cli_addr{};
-            socklen_t addr_len = sizeof(cli_addr);
-            const auto client_socket = accept(server_socket, reinterpret_cast<sockaddr*>(&cli_addr), &addr_len);
-            if (client_socket < 0) {
-                close(server_socket);
-                throw std::runtime_error("Error acceping sockets!");
-            }
-            active_connections.emplace_back(client_socket);
+        for (int i = 0; i < (total_sockets - 1); ++i) {
+            const auto client_socket = socket(AF_INET, SOCK_DGRAM, 0);
+            tune_udp_socket(client_socket);
+            all_sockets[i+1] = client_socket;
         }
     }
 
-    for (const int client_fd : active_connections) {
-        const int flags = fcntl(client_fd, F_GETFL, 0);
-        if (flags == -1) throw std::runtime_error("get fcntl failed");
-        if (fcntl(client_fd, F_SETFL, flags | O_NONBLOCK) == -1) throw std::runtime_error("set fcntl failed");
-    }
-
-    constexpr unsigned int buffer_count = 128;
-    std::atomic<unsigned char> acks[log_size];
-    char log [log_size][message_size];
-
+    auto acks = new std::atomic<unsigned char>[log_size];
+    char** log = new char*[log_size];
     for (size_t i = 0; i < log_size; ++i) {
-        memset(log[i], 0, message_size);
+        log[i] = new char[message_size];
     }
-
-    WorkerContext* contexts[threads] = {nullptr};
 
     for (int threadId = 0; threadId < threads; threadId++) {
-        local_workers.emplace_back([&, connections, pipes, node_id, leader_id]() {
-            const auto ctx = new WorkerContext(buffer_count, message_size);
-            contexts[threadId] = ctx;
+        local_workers.emplace_back([&all_sockets, total_sockets, connections, pipes, node_id, leader_id]() {
+            constexpr unsigned int buffer_count = 128;
+            std::vector<iovec> io_vecs(buffer_count);
+            const auto write_buffers = new char[buffer_count * message_size];
+            const auto write_references = new unsigned int[buffer_count];
+            const auto write_buffer_stack = new unsigned int[buffer_count];
+
+            for (size_t i = 0; i < buffer_count; ++i) {
+                io_vecs[i].iov_base = write_buffers + i * message_size;
+                io_vecs[i].iov_len = message_size;
+                write_references[i] = 0;
+                write_buffer_stack[i] = static_cast<unsigned int>(i);
+            }
 
             fprintf(stderr, "Node id: %d\n", node_id);
             run_ring(
                 4096, 1,
                 ring_init(
-
-                    io_uring_register(_r_ring_fd, IORING_REGISTER_BUFFERS, ctx->iovecs.data(), buffer_count);
+                    io_uring_register(_r_ring_fd, IORING_REGISTER_FILES, all_sockets, total_sockets);
+                    io_uring_register(_r_ring_fd, IORING_REGISTER_BUFFERS, io_vecs.data(), buffer_count);
                 ),
                 ring_loop(),
                 ring_completions(
@@ -177,19 +145,19 @@ void run_raft_tcp(
                 )
             );
 
-            std::cout << "Done running ring" << std::endl;
+            delete[] write_buffers;
+            delete[] write_references;
+            delete[] write_buffer_stack;
         });
     }
 
-    std::cout << "Done?" << std::endl;
 
-    for (auto &worker : local_workers) {
-        worker.join();
-    }
-
-    for (int i = 0; i < threads; i++) {
-        delete contexts[i];
-    }
+    for (auto &worker: local_workers) { worker.join(); }
+    close(server_socket);
+    for (size_t i = 0; i < total_sockets; ++i) { close(all_sockets[i]); }
+    for (size_t i = 0; i < log_size; ++i) { delete[] log[i]; }
+    delete[] log;
+    delete[] acks;
 }
 
 
