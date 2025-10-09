@@ -9,8 +9,6 @@
 #include <asm-generic/unistd.h>
 #include <unistd.h>
 
-#include "RingConfig.hpp"  // Your RingConfig header
-
 // Wrapper for io_uring_setup syscall with error checking
 __attribute__((always_inline)) inline int io_uring_setup(const unsigned entries, io_uring_params *params) {
     const int ring_fd = syscall(__NR_io_uring_setup, entries, params);
