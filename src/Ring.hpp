@@ -231,16 +231,16 @@ do { \
         .ioprio = IORING_RECVSEND_FIXED_BUF                                    \
     )
 
-#define submit_send_zc(fd_slot, buf, len, rem_addr, rem_addr_len, buf_index, msg_flags, zc_flags, s_flags, s_data) \
+#define submit_send_zc(fd_slot, buf, buf_len, rem_addr, rem_addr_len, buffer_index, message_flags, zc_flags, s_flags, s_data) \
     submit_with_args(IORING_OP_SEND_ZC, s_flags | IOSQE_FIXED_FILE, s_data,                                \
         .fd = fd_slot,                                                                                     \
         .addr = reinterpret_cast<unsigned long>(buf),                                                      \
-        .len = len,                                                                                        \
+        .len = buf_len,                                                                                        \
         .msg_flags = zc_flags,                                                                             \
         .addr2 = reinterpret_cast<unsigned long>(rem_addr),                                                    \
         .addr_len = rem_addr_len,                                                                              \
-        .buf_index = buf_index,                                                                            \
-        .msg_flags = msg_flags,                                                                            \
+        .buf_index = buffer_index,                                                                            \
+        .msg_flags = message_flags,                                                                            \
         .ioprio = zc_flags | IORING_RECVSEND_FIXED_BUF                                                     \
     )
 
@@ -254,11 +254,11 @@ do { \
         .msg_flags = 0                                                                         \
     )
 
-#define submit_read_multishot(fd_slot, offset, buf_group, s_flags, s_data)                               \
+#define submit_read_multishot(fd_slot, offset, buffer_group, s_flags, s_data)                               \
     submit_with_args(IORING_OP_READ_MULTISHOT, s_flags | IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE, s_data, \
         .fd = fd_slot,                                                                                   \
         .off = offset,                                                                                   \
-        .buf_group = buf_group                                                                           \
+        .buf_group = buffer_group                                                                           \
     )
 
 #define submit_recv_zc_multishot(fd_slot, zcrx_index, s_flags, s_data)      \
@@ -280,6 +280,9 @@ do { \
 #define on_close(block)     if (c_opcode == IORING_OP_CLOSE)      { block }
 #define on_accept(block)    if (c_opcode == IORING_OP_ACCEPT)     { block }
 #define on_connect(block)   if (c_opcode == IORING_OP_CONNECT)     { block }
+#define on_provide_buffers(block) if (c_opcode == IORING_OP_PROVIDE_BUFFERS) { block }
+#define on_multishot_read(block) if (c_opcode == IORING_OP_READ_MULTISHOT)         { block }
+#define on_zc_send(block) if (c_opcode == IORING_OP_SEND_ZC)              { block }
 
 #define ring_init(code) do { code } while(0);
 #define ring_loop(code) do { code } while(0);

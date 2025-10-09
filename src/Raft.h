@@ -8,6 +8,7 @@
 #include "sys/socket.h"
 #include <netinet/tcp.h>
 #include <fcntl.h>
+#include <iostream>
 
 inline void tune_udp_socket(const int fd) {
     if (fd < 0) {
@@ -80,7 +81,6 @@ void run_raft_udp(
         log[i] = new char[message_size];
     }
 
-
     const auto pipes_per_thread = pipes / threads;
     for (int threadId = 0; threadId < threads; threadId++) {
         local_workers.emplace_back([&peers, connections, pipes_per_thread, node_id, leader_id]() {
@@ -112,15 +112,13 @@ void run_raft_udp(
             peer_sockets[0] = server_socket;
             if (leader_id == node_id) {
                 for (int i = 0; i < peers.size(); ++i) {
-                    if (i != node_id) {
-                        auto peer = peers[i];
-                        const auto client_socket = socket(AF_INET, SOCK_DGRAM, 0);
-                        tune_udp_socket(client_socket);
-                        if (connect(client_socket, reinterpret_cast<sockaddr*>(&peer.addr), sizeof(peer.addr)) != 0) {
-                            throw std::runtime_error("Failed to connect to peer");
-                        }
-                        peer_sockets[i+1] = client_socket;
-                    } else peer_sockets[i+1] = -1;
+                    auto peer = peers[i];
+                    const auto client_socket = socket(AF_INET, SOCK_DGRAM, 0);
+                    tune_udp_socket(client_socket);
+                    if (connect(client_socket, reinterpret_cast<sockaddr *>(&peer.addr), sizeof(peer.addr)) != 0) {
+                        throw std::runtime_error("Failed to connect to peer");
+                    }
+                    peer_sockets[i + 1] = client_socket;
                 }
             }
 
@@ -137,16 +135,65 @@ void run_raft_udp(
                 write_buffer_stack[i] = static_cast<unsigned int>(i);
             }
 
+            char* read_buffers = nullptr;
+            if (posix_memalign(reinterpret_cast<void**>(&read_buffers), 4096, buffer_count * message_size) != 0) {
+                throw std::runtime_error("posix_memalign failed");
+            }
+
             fprintf(stderr, "Node id: %d\n", node_id);
             run_ring(
                 4096, 1,
                 ring_init(
                     io_uring_register(_r_ring_fd, IORING_REGISTER_FILES, peer_sockets, peers.size()+1);
                     io_uring_register(_r_ring_fd, IORING_REGISTER_BUFFERS, io_vecs.data(), buffer_count);
+                    submit_provide_buffers(read_buffers, message_size, buffer_count, 1, 0, 0, (void*) nullptr);
+                    submit_read_multishot(0, 0, 1, 0, (void*) nullptr);
+                    submit_send_zc(
+                        1,
+                        write_buffers,
+                        100,
+                        &node_address.addr,
+                        sizeof(node_address.addr),
+                        0,
+                        0,
+                        0,
+                        0,
+                        (void*) nullptr
+                    );
                 ),
                 ring_loop(),
                 ring_completions(
+                    on_provide_buffers(
+                        std::cout << "Provided buffers: " << completion.res << std::endl;
+                    )
 
+                    on_multishot_read(
+                        if (completion.res <= 0) {
+                            std::cerr << "Socket closed or error: " << completion.res << std::endl;
+                        } else {
+                            const auto buf_id = completion.flags >> IORING_CQE_BUFFER_SHIFT;
+                            auto buffer = read_buffers + (buf_id * message_size);
+                            std::cout << "Read " << completion.res << " bytes from socket using buffer " << buf_id << std::endl;
+
+                            submit_provide_buffers(
+                                buffer,
+                                message_size,
+                                1,
+                                1,
+                                buf_id,
+                                0,
+                                (void*) nullptr
+                            );
+                        }
+                    )
+
+                    on_zc_send(
+                        if (completion.res < 0) {
+                            std::cerr << "SEND_ZC failed: " << std::strerror(-completion.res) << std::endl;
+                        } else {
+                            std::cout << "Sent out: " << completion.res << " bytes" << std::endl;
+                        }
+                    )
                 )
             );
 
@@ -155,6 +202,7 @@ void run_raft_udp(
             delete[] write_buffers;
             delete[] write_references;
             delete[] write_buffer_stack;
+            free(read_buffers);
         });
     }
 
