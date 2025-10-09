@@ -66,7 +66,6 @@ struct Address {
 
 template<size_t log_size, size_t message_size, size_t threads>
 void run_raft_udp(
-    const unsigned int connections,
     const unsigned int pipes,
     const unsigned char node_id,
     const unsigned char leader_id,
@@ -75,6 +74,7 @@ void run_raft_udp(
     std::vector<std::thread> local_workers;
     local_workers.reserve(threads);
 
+    auto current_slot = std::atomic<unsigned int>(0);
     auto acks = new std::atomic<unsigned char>[log_size];
     char** log = new char*[log_size];
     for (size_t i = 0; i < log_size; ++i) {
@@ -82,8 +82,8 @@ void run_raft_udp(
     }
 
     const auto pipes_per_thread = pipes / threads;
-    for (int threadId = 0; threadId < threads; threadId++) {
-        local_workers.emplace_back([&peers, connections, pipes_per_thread, node_id, leader_id]() {
+    for (int thread_id = 0; thread_id < threads; thread_id++) {
+        local_workers.emplace_back([&acks, &current_slot, &peers, pipes_per_thread, node_id, leader_id, thread_id]() {
             int peer_sockets[peers.size()+1];
             auto node_address = peers[node_id];
             const auto server_socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -122,11 +122,12 @@ void run_raft_udp(
                 }
             }
 
-            constexpr unsigned int buffer_count = 128;
+            constexpr unsigned int buffer_count = 4096;
             std::vector<iovec> io_vecs(buffer_count);
             const auto write_buffers = new char[buffer_count * message_size];
             const auto write_references = new unsigned int[buffer_count];
             const auto write_buffer_stack = new unsigned int[buffer_count];
+            auto write_buffer_stack_head = buffer_count;
 
             for (size_t i = 0; i < buffer_count; ++i) {
                 io_vecs[i].iov_base = write_buffers + i * message_size;
@@ -140,7 +141,6 @@ void run_raft_udp(
                 throw std::runtime_error("posix_memalign failed");
             }
 
-            fprintf(stderr, "Node id: %d\n", node_id);
             run_ring(
                 4096, 1,
                 ring_init(
@@ -148,32 +148,74 @@ void run_raft_udp(
                     io_uring_register(_r_ring_fd, IORING_REGISTER_BUFFERS, io_vecs.data(), buffer_count);
                     submit_provide_buffers(read_buffers, message_size, buffer_count, 1, 0, 0, (void*) nullptr);
                     submit_read_multishot(0, 0, 1, 0, (void*) nullptr);
-                    submit_send_zc(
-                        1,
-                        write_buffers,
-                        100,
-                        &node_address.addr,
-                        sizeof(node_address.addr),
-                        0,
-                        0,
-                        0,
-                        0,
-                        (void*) nullptr
-                    );
+
+                    if (node_id == leader_id) {
+                        for (int i = 0; i < pipes_per_thread; i++) {
+                            const auto write_buffer_head = --write_buffer_stack_head;
+                            if (write_buffer_head < 0) throw std::runtime_error("write_buffer_id is negative");
+                            unsigned short buffer_index = write_buffer_stack[write_buffer_head];
+                            write_references[buffer_index] = peers.size() - 1;
+                            const auto buffer = write_buffers + buffer_index * message_size;
+                            const unsigned int slot = current_slot.fetch_add(1, std::memory_order_release) % log_size;
+                            buffer[0] = 0;
+                            buffer[1] = 0;
+                            std::memcpy(buffer + 2, &slot, sizeof(slot));
+                            std::atomic<unsigned char>& ack = acks[slot];
+                            unsigned char expected = 0;
+                            if (!ack.compare_exchange_strong(expected, 1, std::memory_order_acq_rel)) {
+                                throw std::runtime_error("Failed to start initial pipes!");
+                            }
+
+                            for (int peer_id = 0; peer_id < peers.size(); ++peer_id) {
+                                if (peer_id != node_id) {
+                                    submit_send_zc(
+                                        peer_id + 1,
+                                        buffer,
+                                        6,
+                                        nullptr,
+                                        0,
+                                        buffer_index,
+                                        0,
+                                        0,
+                                        0,
+                                        (void*) &write_buffer_stack[write_buffer_head]
+                                    );
+                                }
+                            }
+                        }
+                    }
                 ),
                 ring_loop(),
                 ring_completions(
                     on_provide_buffers(
-                        std::cout << "Provided buffers: " << completion.res << std::endl;
+                        // std::cout << "Provided buffers: " << completion.res << std::endl;
                     )
 
                     on_multishot_read(
                         if (completion.res <= 0) {
-                            std::cerr << "Socket closed or error: " << completion.res << std::endl;
+                            std::cerr << "Socket closed or error during read: " << std::strerror(-completion.res) << std::endl;
                         } else {
                             const auto buf_id = completion.flags >> IORING_CQE_BUFFER_SHIFT;
                             auto buffer = read_buffers + (buf_id * message_size);
-                            std::cout << "Read " << completion.res << " bytes from socket using buffer " << buf_id << std::endl;
+                            const auto op = buffer[0];
+                            if (op == 0) {
+                                const bool is_null = buffer[1];
+                                unsigned int slot;
+                                std::memcpy(&slot, buffer + 2, sizeof(slot));
+
+                                fprintf(stderr, "[%d] Got a propose on slot: %d hasValue=%d\n", thread_id, slot, is_null);
+                            } else if (op == 1) {
+                                //slot  012345678
+                                //owner 000000000
+                                //
+
+                                if (node_id != leader_id) { throw std::runtime_error("Non-leader recieved ack!"); }
+                                unsigned int slot;
+                                std::memcpy(&slot, buffer + 2, sizeof(slot));
+
+                                // commitIndex++; sendPropose(commitIndex); apply
+                                // acks->fetch_add();
+                            }
 
                             submit_provide_buffers(
                                 buffer,
@@ -187,11 +229,17 @@ void run_raft_udp(
                         }
                     )
 
-                    on_zc_send(
+                    on_zc_send (
                         if (completion.res < 0) {
                             std::cerr << "SEND_ZC failed: " << std::strerror(-completion.res) << std::endl;
                         } else {
-                            std::cout << "Sent out: " << completion.res << " bytes" << std::endl;
+                            if (completion.flags & IORING_CQE_F_NOTIF) {
+                                const auto buffer_index = *static_cast<unsigned int*>(c_data);
+                                write_references[buffer_index] -= 1;
+                                if (write_references[buffer_index] == 0) {
+                                    write_buffer_stack[write_buffer_stack_head++] = buffer_index;
+                                }
+                            }
                         }
                     )
                 )

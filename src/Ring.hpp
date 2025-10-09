@@ -231,7 +231,7 @@ do { \
         .ioprio = IORING_RECVSEND_FIXED_BUF                                    \
     )
 
-#define submit_send_zc(fd_slot, buf, buf_len, rem_addr, rem_addr_len, buffer_index, message_flags, zc_flags, s_flags, s_data) \
+#define submit_send_zc(fd_slot, buf, buf_len, rem_addr, rem_addr_len, s_buffer_index, message_flags, zc_flags, s_flags, s_data) \
     submit_with_args(IORING_OP_SEND_ZC, s_flags | IOSQE_FIXED_FILE, s_data,                                \
         .fd = fd_slot,                                                                                     \
         .addr = reinterpret_cast<unsigned long>(buf),                                                      \
@@ -239,7 +239,7 @@ do { \
         .msg_flags = zc_flags,                                                                             \
         .addr2 = reinterpret_cast<unsigned long>(rem_addr),                                                    \
         .addr_len = rem_addr_len,                                                                              \
-        .buf_index = buffer_index,                                                                            \
+        .buf_index = s_buffer_index,                                                                            \
         .msg_flags = message_flags,                                                                            \
         .ioprio = zc_flags | IORING_RECVSEND_FIXED_BUF                                                     \
     )
@@ -324,6 +324,9 @@ do { \
     const auto _r_cq_ring_mask = *reinterpret_cast<unsigned int*>(_r_cq_base + _r_params->cq_off.ring_mask); \
     const auto* _r_cqes = reinterpret_cast<io_uring_cqe*>(_r_cq_base + _r_params->cq_off.cqes); \
     unsigned int _r_cq_head_local = _r_cq_head.load(std::memory_order_seq_cst); \
+        \
+        \
+        \
     init \
     if (_r_sq_flags->load(std::memory_order_relaxed) & IORING_SQ_NEED_WAKEUP) \
         io_uring_enter(_r_ring_fd, 0, 0, IORING_ENTER_SQ_WAKEUP); \
