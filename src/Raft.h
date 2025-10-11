@@ -74,7 +74,6 @@ void run_raft_udp(
     std::vector<std::thread> local_workers;
     local_workers.reserve(threads);
 
-    auto current_slot = std::atomic<unsigned int>(0);
     auto acks = new std::atomic<unsigned char>[log_size];
     char** log = new char*[log_size];
     for (size_t i = 0; i < log_size; ++i) {
@@ -83,7 +82,7 @@ void run_raft_udp(
 
     const auto pipes_per_thread = pipes / threads;
     for (int thread_id = 0; thread_id < threads; thread_id++) {
-        local_workers.emplace_back([&acks, &current_slot, &peers, pipes_per_thread, node_id, leader_id, thread_id]() {
+        local_workers.emplace_back([&acks, pipes, &peers, pipes_per_thread, node_id, leader_id, thread_id]() {
             int peer_sockets[peers.size()+1];
             auto node_address = peers[node_id];
             const auto server_socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -156,7 +155,7 @@ void run_raft_udp(
                             unsigned short buffer_index = write_buffer_stack[write_buffer_head];
                             write_references[buffer_index] = peers.size() - 1;
                             const auto buffer = write_buffers + buffer_index * message_size;
-                            const unsigned int slot = current_slot.fetch_add(1, std::memory_order_release) % log_size;
+                            const unsigned int slot = thread_id * (pipes / threads) + i;
                             buffer[0] = 0;
                             buffer[1] = 0;
                             std::memcpy(buffer + 2, &slot, sizeof(slot));
@@ -202,8 +201,6 @@ void run_raft_udp(
                                 const bool is_null = buffer[1];
                                 unsigned int slot;
                                 std::memcpy(&slot, buffer + 2, sizeof(slot));
-
-                                fprintf(stderr, "[%d] Got a propose on slot: %d hasValue=%d\n", thread_id, slot, is_null);
                             } else if (op == 1) {
                                 //slot  012345678
                                 //owner 000000000
