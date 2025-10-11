@@ -109,16 +109,14 @@ void run_raft_udp(
             tune_udp_socket(server_socket);
 
             peer_sockets[0] = server_socket;
-            if (leader_id == node_id) {
-                for (int i = 0; i < peers.size(); ++i) {
-                    auto peer = peers[i];
-                    const auto client_socket = socket(AF_INET, SOCK_DGRAM, 0);
-                    tune_udp_socket(client_socket);
-                    if (connect(client_socket, reinterpret_cast<sockaddr *>(&peer.addr), sizeof(peer.addr)) != 0) {
-                        throw std::runtime_error("Failed to connect to peer");
-                    }
-                    peer_sockets[i + 1] = client_socket;
+            for (int i = 0; i < peers.size(); ++i) {
+                auto peer = peers[i];
+                const auto client_socket = socket(AF_INET, SOCK_DGRAM, 0);
+                tune_udp_socket(client_socket);
+                if (connect(client_socket, reinterpret_cast<sockaddr *>(&peer.addr), sizeof(peer.addr)) != 0) {
+                    throw std::runtime_error("Failed to connect to peer");
                 }
+                peer_sockets[i + 1] = client_socket;
             }
 
             constexpr unsigned int buffer_count = 4096;
@@ -201,6 +199,7 @@ void run_raft_udp(
                                 const bool is_null = buffer[1];
                                 unsigned int slot;
                                 std::memcpy(&slot, buffer + 2, sizeof(slot));
+                                fprintf(stderr, "[nodeId=%d] Got a proposal!\n", node_id);
                             } else if (op == 1) {
                                 //slot  012345678
                                 //owner 000000000
@@ -209,7 +208,7 @@ void run_raft_udp(
                                 if (node_id != leader_id) { throw std::runtime_error("Non-leader recieved ack!"); }
                                 unsigned int slot;
                                 std::memcpy(&slot, buffer + 2, sizeof(slot));
-
+                                fprintf(stderr, "[nodeId=%d] Got a proposal!\n", node_id);
                                 // commitIndex++; sendPropose(commitIndex); apply
                                 // acks->fetch_add();
                             }
