@@ -64,6 +64,24 @@ struct Address {
     }
 };
 
+constexpr unsigned char OP_PROPOSE = 0;
+constexpr unsigned char OP_ACK = 1;
+
+constexpr unsigned char MSG_NULL = 0;
+constexpr unsigned char MSG_ACK = 1;
+
+
+constexpr unsigned int APPLIED_MASK = 1u << 31;
+constexpr int MAX_NODES = 31;
+constexpr std::array<unsigned int, MAX_NODES> NODE_MASKS = []() {
+    std::array<unsigned int, MAX_NODES> masks = {};
+    for (int i = 0; i < MAX_NODES; ++i) {
+        masks[i] = 1u << (30 - i);
+    }
+    return masks;
+}();
+
+
 template<size_t log_size, size_t message_size, size_t threads>
 void run_raft_udp(
     const unsigned int pipes,
@@ -74,6 +92,8 @@ void run_raft_udp(
     std::vector<std::thread> local_workers;
     local_workers.reserve(threads);
 
+    std::atomic<unsigned int> apply_index { 0 };
+    std::atomic_flag applying = ATOMIC_FLAG_INIT;
     auto acks = new std::atomic<unsigned char>[log_size];
     char** log = new char*[log_size];
     for (size_t i = 0; i < log_size; ++i) {
@@ -82,8 +102,9 @@ void run_raft_udp(
 
     const auto pipes_per_thread = pipes / threads;
     for (int thread_id = 0; thread_id < threads; thread_id++) {
-        local_workers.emplace_back([&acks, pipes, &peers, pipes_per_thread, node_id, leader_id, thread_id]() {
+        local_workers.emplace_back([&apply_index, &applying, &acks, pipes, &peers, pipes_per_thread, node_id, leader_id, thread_id]() {
             int peer_sockets[peers.size()+1];
+            const auto majority = peers.size() / 2 + 1;
             auto node_address = peers[node_id];
             const auto server_socket = socket(AF_INET, SOCK_DGRAM, 0);
             if (server_socket < 0) {
@@ -154,11 +175,11 @@ void run_raft_udp(
                             write_references[buffer_index] = peers.size() - 1;
                             const auto buffer = write_buffers + buffer_index * message_size;
                             const unsigned int slot = thread_id * (pipes / threads) + i;
-                            buffer[0] = 0;
-                            buffer[1] = 0;
-                            std::memcpy(buffer + 2, &slot, sizeof(slot));
+                            buffer[0] = OP_PROPOSE;
+                            std::memcpy(buffer + 1, &slot, sizeof(slot));
                             std::atomic<unsigned char>& ack = acks[slot];
                             unsigned char expected = 0;
+                            buffer[5] = MSG_NULL;
                             if (!ack.compare_exchange_strong(expected, 1, std::memory_order_acq_rel)) {
                                 throw std::runtime_error("Failed to start initial pipes!");
                             }
@@ -195,22 +216,33 @@ void run_raft_udp(
                             const auto buf_id = completion.flags >> IORING_CQE_BUFFER_SHIFT;
                             auto buffer = read_buffers + (buf_id * message_size);
                             const auto op = buffer[0];
-                            if (op == 0) {
-                                const bool is_null = buffer[1];
-                                unsigned int slot;
-                                std::memcpy(&slot, buffer + 2, sizeof(slot));
-                                fprintf(stderr, "[nodeId=%d] Got a proposal!\n", node_id);
-                            } else if (op == 1) {
-                                //slot  012345678
-                                //owner 000000000
-                                //
-
+                            unsigned int slot;
+                            std::memcpy(&slot, buffer + 1, sizeof(slot));
+                            if (op == OP_PROPOSE) {
+                                const bool is_null = buffer[5] == MSG_NULL;
+                                const auto write_buffer_head = --write_buffer_stack_head;
+                                if (write_buffer_head < 0) throw std::runtime_error("write_buffer_id is negative");
+                                unsigned short buffer_index = write_buffer_stack[write_buffer_head];
+                                write_references[buffer_index] = peers.size() - 1;
+                                const auto ack_buffer = write_buffers + buffer_index * message_size;
+                                ack_buffer[0] = OP_ACK;
+                                std::memcpy(ack_buffer + 1, &slot, sizeof(slot));
+                                submit_send_zc(
+                                       leader_id + 1,
+                                       ack_buffer,
+                                       5,
+                                       nullptr,
+                                       0,
+                                       buffer_index,
+                                       0,
+                                       0,
+                                       0,
+                                       (void*) &write_buffer_stack[write_buffer_head]
+                                 );
+                            } else if (op == OP_ACK) {
                                 if (node_id != leader_id) { throw std::runtime_error("Non-leader recieved ack!"); }
-                                unsigned int slot;
-                                std::memcpy(&slot, buffer + 2, sizeof(slot));
-                                fprintf(stderr, "[nodeId=%d] Got a proposal!\n", node_id);
-                                // commitIndex++; sendPropose(commitIndex); apply
-                                // acks->fetch_add();
+                                fprintf(stderr, "Got an ack back for slot: %d\n", slot);
+
                             }
 
                             submit_provide_buffers(
