@@ -24,11 +24,11 @@ int main() {
 
     std::vector<std::thread> workers{};
     std::vector peers{
-        Address { "127.0.0.1", 6982 },
-        Address { "127.0.0.1", 6981 }
+        Address { "127.0.0.1", 6984 },
+        Address { "127.0.0.1", 6985 }
     };
-    workers.emplace_back([&](){ run_raft_udp<100,100, 1>(5, 0, 0, peers); });
-    workers.emplace_back([&]() { run_raft_udp<100,100, 1>(1, 1, 0, peers); });
+    workers.emplace_back([&](){ run_raft_udp<20000, 100, 1, 10000>(0, 0, peers); });
+    workers.emplace_back([&]() { run_raft_udp<20000, 100, 1, 10000>(1, 0, peers); });
 
     while (RUNNING.load()) {
         pause();

@@ -9,13 +9,14 @@
 #include <netinet/tcp.h>
 #include <fcntl.h>
 #include <iostream>
+#include <future>
 
 inline void tune_udp_socket(const int fd) {
     if (fd < 0) {
         throw std::invalid_argument("Invalid socket descriptor");
     }
 
-    int bufsize = 1 << 20; // 1 MB
+    int bufsize = 32 << 20; // 16 MB
 
     // Increase send buffer
     if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bufsize, sizeof(bufsize)) < 0) {
@@ -28,13 +29,13 @@ inline void tune_udp_socket(const int fd) {
         close(fd);
         throw std::runtime_error("setsockopt(SO_RCVBUF) failed: " + std::string(std::strerror(errno)));
     }
-
-    // Mark as low latency (IP_TOS = IPTOS_LOWDELAY)
-    constexpr int tos = 0x10;
-    if (setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)) < 0) {
-        close(fd);
-        throw std::runtime_error("setsockopt(IP_TOS) failed: " + std::string(std::strerror(errno)));
-    }
+    //
+    // // Mark as low latency (IP_TOS = IPTOS_LOWDELAY)
+    // constexpr int tos = 0x10;
+    // if (setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)) < 0) {
+    //     close(fd);
+    //     throw std::runtime_error("setsockopt(IP_TOS) failed: " + std::string(std::strerror(errno)));
+    // }
 
     // Make socket non-blocking
     const int flags = fcntl(fd, F_GETFL, 0);
@@ -82,19 +83,19 @@ constexpr std::array<unsigned int, MAX_NODES> NODE_MASKS = []() {
 }();
 
 
-template<size_t log_size, size_t message_size, size_t threads>
+template<size_t log_size, size_t message_size, size_t threads, size_t pipes>
 void run_raft_udp(
-    const unsigned int pipes,
     const unsigned char node_id,
     const unsigned char leader_id,
     std::vector<Address> &peers
 ) {
+
+    static_assert(pipes < log_size, "log size must be larger than total pipes");
     std::vector<std::thread> local_workers;
     local_workers.reserve(threads);
 
     std::atomic<unsigned int> apply_index { 0 };
-    std::atomic_flag applying = ATOMIC_FLAG_INIT;
-    auto acks = new std::atomic<unsigned char>[log_size];
+    auto acks = new std::atomic<unsigned int>[log_size];
     char** log = new char*[log_size];
     for (size_t i = 0; i < log_size; ++i) {
         log[i] = new char[message_size];
@@ -102,7 +103,7 @@ void run_raft_udp(
 
     const auto pipes_per_thread = pipes / threads;
     for (int thread_id = 0; thread_id < threads; thread_id++) {
-        local_workers.emplace_back([&apply_index, &applying, &acks, pipes, &peers, pipes_per_thread, node_id, leader_id, thread_id]() {
+        local_workers.emplace_back([&apply_index, &acks, &peers, pipes_per_thread, node_id, leader_id, thread_id]() {
             int peer_sockets[peers.size()+1];
             const auto majority = peers.size() / 2 + 1;
             auto node_address = peers[node_id];
@@ -140,12 +141,23 @@ void run_raft_udp(
                 peer_sockets[i + 1] = client_socket;
             }
 
-            constexpr unsigned int buffer_count = 4096;
+            constexpr unsigned int buffer_count = 15800;
             std::vector<iovec> io_vecs(buffer_count);
             const auto write_buffers = new char[buffer_count * message_size];
             const auto write_references = new unsigned int[buffer_count];
             const auto write_buffer_stack = new unsigned int[buffer_count];
             auto write_buffer_stack_head = buffer_count;
+
+            int wrote_out = 0;
+
+            // if (node_id == leader_id) {
+            //     auto future = std::async(std::launch::async, [&wrote_out]() {
+            //         while (RUNNING.load()) {
+            //             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            //             fprintf(stderr, "Wrote out: %d\n", wrote_out);
+            //         }
+            //     });
+            // }
 
             for (size_t i = 0; i < buffer_count; ++i) {
                 io_vecs[i].iov_base = write_buffers + i * message_size;
@@ -159,8 +171,13 @@ void run_raft_udp(
                 throw std::runtime_error("posix_memalign failed");
             }
 
+            int max_seen = 0;
+            int ack_order[log_size];
+            int test = 0;
+            // int min_seen = 0;
+
             run_ring(
-                4096, 1,
+                62000, 1,
                 ring_init(
                     io_uring_register(_r_ring_fd, IORING_REGISTER_FILES, peer_sockets, peers.size()+1);
                     io_uring_register(_r_ring_fd, IORING_REGISTER_BUFFERS, io_vecs.data(), buffer_count);
@@ -177,13 +194,11 @@ void run_raft_udp(
                             const unsigned int slot = thread_id * (pipes / threads) + i;
                             buffer[0] = OP_PROPOSE;
                             std::memcpy(buffer + 1, &slot, sizeof(slot));
-                            std::atomic<unsigned char>& ack = acks[slot];
-                            unsigned char expected = 0;
-                            buffer[5] = MSG_NULL;
-                            if (!ack.compare_exchange_strong(expected, 1, std::memory_order_acq_rel)) {
-                                throw std::runtime_error("Failed to start initial pipes!");
-                            }
 
+                            std::atomic<unsigned int>& ack = acks[slot];
+                            ack.fetch_or(APPLIED_MASK, std::memory_order_release);
+
+                            buffer[5] = MSG_NULL;
                             for (int peer_id = 0; peer_id < peers.size(); ++peer_id) {
                                 if (peer_id != node_id) {
                                     submit_send_zc(
@@ -241,7 +256,63 @@ void run_raft_udp(
                                  );
                             } else if (op == OP_ACK) {
                                 if (node_id != leader_id) { throw std::runtime_error("Non-leader recieved ack!"); }
-                                fprintf(stderr, "Got an ack back for slot: %d\n", slot);
+                                ack_order[test++] = slot;
+                                if (slot > max_seen) {
+                                    max_seen = slot;
+                                } else {
+                                    fprintf(stderr, "[");
+                                    for (int i = 0; i < test; ++i) {
+                                        fprintf(stderr, "%d", ack_order[i]);
+                                        if (i != test - 1) fprintf(stderr, ", ");
+                                    }
+                                    fprintf(stderr, "]\n");
+                                }
+
+                                // auto current_slot = slot;
+                                // int i = 0;
+                                // int j = 0;
+                                // while (i++ < 8000) {
+                                //     std::atomic<unsigned int>& ack = acks[current_slot];
+                                //     unsigned int current_ack = ack.load(std::memory_order_acquire);
+                                //     const auto current_apply = apply_index.load(std::memory_order_acquire);
+                                //     // can only increment ack if (ack & start != 0)
+                                //     if ((current_ack & APPLIED_MASK) == 0 || current_slot < current_apply) {
+                                //         fprintf(stderr, "Breaking: %d\n", (current_slot < current_apply) ? 1 : 0);
+                                //         break;
+                                //     }
+                                //     unsigned int next = current_ack;
+                                //     if (current_slot == slot) {
+                                //         ++next;
+                                //     }
+                                //     // apply = 0
+                                //     // 0 0 0 0
+                                //     // 1 2 1 2
+                                //
+                                //     //
+                                //     // slot 0     1     2     3
+                                //     // ack
+                                //
+                                //     const auto has_majority = (next & (APPLIED_MASK - 1)) >= majority - 1;
+                                //     const auto should_apply = current_slot == current_apply && has_majority;
+                                //     if (should_apply) next = next & (APPLIED_MASK - 1);
+                                //     if (ack.compare_exchange_strong(current_ack, next)) {
+                                //         if (should_apply) {
+                                //             fprintf(stderr, "[%d] Applied index: %d\n", thread_id, current_slot);
+                                //             apply_index.fetch_add(1, std::memory_order_release);
+                                //             ack.store(0, std::memory_order_release);
+                                //             ++current_slot;
+                                //             j++;
+                                //
+                                //             //
+                                //             // propose out next
+                                //         } else break;
+                                //     }
+                                // }
+                                // if (i >= 8000) {
+                                //     fprintf(stderr, "We spun so hard on slot: %d - %d\n", current_slot, j);
+                                // }
+
+
 
                             }
 
@@ -262,6 +333,9 @@ void run_raft_udp(
                             std::cerr << "SEND_ZC failed: " << std::strerror(-completion.res) << std::endl;
                         } else {
                             if (completion.flags & IORING_CQE_F_NOTIF) {
+                                if (node_id == leader_id) {
+                                    ++wrote_out;
+                                }
                                 const auto buffer_index = *static_cast<unsigned int*>(c_data);
                                 write_references[buffer_index] -= 1;
                                 if (write_references[buffer_index] == 0) {
@@ -273,7 +347,7 @@ void run_raft_udp(
                 )
             );
 
-            for (int i = 0; i < peers.size(); ++i) { if (i != node_id) close(peer_sockets[i]); }
+            for (int i = 0; i < peers.size(); ++i) { close(peer_sockets[i]); }
             close(server_socket);
             delete[] write_buffers;
             delete[] write_references;
