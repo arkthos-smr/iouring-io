@@ -244,6 +244,17 @@ do { \
         .ioprio = zc_flags | IORING_RECVSEND_FIXED_BUF                                                     \
     )
 
+#define submit_write_fixed(fd_slot, buf, buf_len, offset, s_buffer_index, s_flags, s_data) \
+    submit_with_args(IORING_OP_WRITE_FIXED, s_flags | IOSQE_FIXED_FILE, s_data,            \
+        .fd       = fd_slot,                                                               \
+        .addr     = reinterpret_cast<unsigned long>(buf),                                  \
+        .len      = buf_len,                                                               \
+        .off      = offset,                                                                \
+        .buf_index= s_buffer_index                                                         \
+    )
+
+
+
 #define submit_recv_multishot(fd_slot, buf_group, mshot_len, mshot_total_len, s_flags, s_data) \
     submit_with_args(IORING_OP_RECV, s_flags | IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE, s_data, \
         .fd = fd_slot,                                                                         \
@@ -341,6 +352,8 @@ do { \
             block \
         } \
         _r_cq_head.store(_r_cq_head_local, std::memory_order_release); \
+        if (_r_sq_flags->load(std::memory_order_relaxed) & IORING_SQ_NEED_WAKEUP) \
+            io_uring_enter(_r_ring_fd, 0, 0, IORING_ENTER_SQ_WAKEUP); \
     } \
     free(_r_params); \
     if (_r_ring_fd >= 0) close(_r_ring_fd); \

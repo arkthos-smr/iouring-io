@@ -16,7 +16,7 @@ inline void tune_udp_socket(const int fd) {
         throw std::invalid_argument("Invalid socket descriptor");
     }
 
-    int bufsize = 32 << 20; // 16 MB
+    int bufsize = 1 << 30; // 1 GB
 
     // Increase send buffer
     if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bufsize, sizeof(bufsize)) < 0) {
@@ -55,7 +55,7 @@ struct Address {
     unsigned short port;
     sockaddr_in addr{};
 
-    Address(const std::string& host, const unsigned short port) : host(host), port(port) {
+    Address(const std::string &host, const unsigned short port) : host(host), port(port) {
         std::memset(&addr, 0, sizeof(addr));
         addr.sin_family = AF_INET;
         addr.sin_port = htons(port);
@@ -82,6 +82,13 @@ constexpr std::array<unsigned int, MAX_NODES> NODE_MASKS = []() {
     return masks;
 }();
 
+static std::atomic<uint32_t> global_sequence_number{0};
+
+// Function to get next sequence number
+uint32_t get_next_sequence_number() {
+    return global_sequence_number.fetch_add(1, std::memory_order_relaxed);
+}
+
 
 template<size_t log_size, size_t message_size, size_t threads, size_t pipes>
 void run_raft_udp(
@@ -89,14 +96,13 @@ void run_raft_udp(
     const unsigned char leader_id,
     std::vector<Address> &peers
 ) {
-
     static_assert(pipes < log_size, "log size must be larger than total pipes");
     std::vector<std::thread> local_workers;
     local_workers.reserve(threads);
 
-    std::atomic<unsigned int> apply_index { 0 };
+    std::atomic<unsigned int> apply_index{0};
     auto acks = new std::atomic<unsigned int>[log_size];
-    char** log = new char*[log_size];
+    char **log = new char *[log_size];
     for (size_t i = 0; i < log_size; ++i) {
         log[i] = new char[message_size];
     }
@@ -104,7 +110,7 @@ void run_raft_udp(
     const auto pipes_per_thread = pipes / threads;
     for (int thread_id = 0; thread_id < threads; thread_id++) {
         local_workers.emplace_back([&apply_index, &acks, &peers, pipes_per_thread, node_id, leader_id, thread_id]() {
-            int peer_sockets[peers.size()+1];
+            int peer_sockets[peers.size() + 1];
             const auto majority = peers.size() / 2 + 1;
             auto node_address = peers[node_id];
             const auto server_socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -123,7 +129,7 @@ void run_raft_udp(
                 throw std::runtime_error("Failed to set SO_REUSEPORT");
             }
 
-            if (bind(server_socket, reinterpret_cast<sockaddr*>(&node_address.addr), sizeof(node_address.addr)) < 0) {
+            if (bind(server_socket, reinterpret_cast<sockaddr *>(&node_address.addr), sizeof(node_address.addr)) < 0) {
                 close(server_socket);
                 throw std::runtime_error("bind failed");
             }
@@ -148,8 +154,6 @@ void run_raft_udp(
             const auto write_buffer_stack = new unsigned int[buffer_count];
             auto write_buffer_stack_head = buffer_count;
 
-            int wrote_out = 0;
-
             // if (node_id == leader_id) {
             //     auto future = std::async(std::launch::async, [&wrote_out]() {
             //         while (RUNNING.load()) {
@@ -166,8 +170,8 @@ void run_raft_udp(
                 write_buffer_stack[i] = static_cast<unsigned int>(i);
             }
 
-            char* read_buffers = nullptr;
-            if (posix_memalign(reinterpret_cast<void**>(&read_buffers), 4096, buffer_count * message_size) != 0) {
+            char *read_buffers = nullptr;
+            if (posix_memalign(reinterpret_cast<void **>(&read_buffers), 4096, buffer_count * message_size) != 0) {
                 throw std::runtime_error("posix_memalign failed");
             }
 
@@ -177,7 +181,7 @@ void run_raft_udp(
             // int min_seen = 0;
 
             run_ring(
-                62000, 1,
+                32000, 1,
                 ring_init(
                     io_uring_register(_r_ring_fd, IORING_REGISTER_FILES, peer_sockets, peers.size()+1);
                     io_uring_register(_r_ring_fd, IORING_REGISTER_BUFFERS, io_vecs.data(), buffer_count);
@@ -188,42 +192,40 @@ void run_raft_udp(
                         for (int i = 0; i < pipes_per_thread; i++) {
                             const auto write_buffer_head = --write_buffer_stack_head;
                             if (write_buffer_head < 0) throw std::runtime_error("write_buffer_id is negative");
-                            unsigned short buffer_index = write_buffer_stack[write_buffer_head];
-                            write_references[buffer_index] = peers.size() - 1;
-                            const auto buffer = write_buffers + buffer_index * message_size;
-                            const unsigned int slot = thread_id * (pipes / threads) + i;
-                            buffer[0] = OP_PROPOSE;
-                            std::memcpy(buffer + 1, &slot, sizeof(slot));
+                                unsigned short buffer_index = write_buffer_stack[write_buffer_head];
+                                write_references[buffer_index] = peers.size() - 1;
+                                const auto buffer = write_buffers + buffer_index * message_size;
+                                const unsigned int slot = thread_id * (pipes / threads) + i;
+                                buffer[0] = OP_PROPOSE;
+                                std::memcpy(buffer + 1, &slot, sizeof(slot));
 
-                            std::atomic<unsigned int>& ack = acks[slot];
-                            ack.fetch_or(APPLIED_MASK, std::memory_order_release);
+                                std::atomic<unsigned int>& ack = acks[slot];
+                                ack.fetch_or(APPLIED_MASK, std::memory_order_release);
 
-                            buffer[5] = MSG_NULL;
-                            for (int peer_id = 0; peer_id < peers.size(); ++peer_id) {
-                                if (peer_id != node_id) {
-                                    submit_send_zc(
-                                        peer_id + 1,
-                                        buffer,
-                                        6,
-                                        nullptr,
-                                        0,
-                                        buffer_index,
-                                        0,
-                                        0,
-                                        0,
-                                        (void*) &write_buffer_stack[write_buffer_head]
-                                    );
+                                buffer[5] = MSG_NULL;
+                                for (int peer_id = 0; peer_id < peers.size(); ++peer_id) {
+                                    if (peer_id != node_id) {
+                                        submit_send_zc(
+                                            peer_id + 1,
+                                            buffer,
+                                            6,
+                                            nullptr,
+                                            0,
+                                            buffer_index,
+                                            0,
+                                            0,
+                                            0,
+                                            (void*) &write_buffer_stack[write_buffer_head]
+                                        );
+                                    }
                                 }
                             }
+
+                            fprintf(stderr, "Wrote out all packets from thread: %d\n", thread_id);
                         }
-                    }
                 ),
                 ring_loop(),
                 ring_completions(
-                    on_provide_buffers(
-                        // std::cout << "Provided buffers: " << completion.res << std::endl;
-                    )
-
                     on_multishot_read(
                         if (completion.res <= 0) {
                             std::cerr << "Socket closed or error during read: " << std::strerror(-completion.res) << std::endl;
@@ -233,6 +235,9 @@ void run_raft_udp(
                             const auto op = buffer[0];
                             unsigned int slot;
                             std::memcpy(&slot, buffer + 1, sizeof(slot));
+                            unsigned int seq_id;
+                            std::memcpy(&seq_id, buffer + 5, sizeof(seq_id));
+
                             if (op == OP_PROPOSE) {
                                 const bool is_null = buffer[5] == MSG_NULL;
                                 const auto write_buffer_head = --write_buffer_stack_head;
@@ -240,80 +245,55 @@ void run_raft_udp(
                                 unsigned short buffer_index = write_buffer_stack[write_buffer_head];
                                 write_references[buffer_index] = peers.size() - 1;
                                 const auto ack_buffer = write_buffers + buffer_index * message_size;
+                                // fprintf(stderr, "Acking back for slot: %d\n", slot);
                                 ack_buffer[0] = OP_ACK;
                                 std::memcpy(ack_buffer + 1, &slot, sizeof(slot));
+                                // fprintf(stderr, "[%d] Got propose for slot: %d\n", thread_id, slot);
+                                // fprintf(stderr, "Follower got propose: slot=%d buf=%d seq=%d\n", slot, buf_id, seq_id);
                                 submit_send_zc(
-                                       leader_id + 1,
-                                       ack_buffer,
-                                       5,
-                                       nullptr,
-                                       0,
-                                       buffer_index,
-                                       0,
-                                       0,
-                                       0,
-                                       (void*) &write_buffer_stack[write_buffer_head]
-                                 );
+                                    leader_id + 1,
+                                    ack_buffer,
+                                    5,
+                                    nullptr,
+                                    0,
+                                    buffer_index,
+                                    0,
+                                    0,
+                                    0,
+                                    (void*) &write_buffer_stack[write_buffer_head]
+                                );
                             } else if (op == OP_ACK) {
                                 if (node_id != leader_id) { throw std::runtime_error("Non-leader recieved ack!"); }
-                                ack_order[test++] = slot;
-                                if (slot > max_seen) {
-                                    max_seen = slot;
-                                } else {
-                                    fprintf(stderr, "[");
-                                    for (int i = 0; i < test; ++i) {
-                                        fprintf(stderr, "%d", ack_order[i]);
-                                        if (i != test - 1) fprintf(stderr, ", ");
+                                // fprintf(stderr, "[%d] Got ack for slot: %d\n", thread_id, slot);
+
+                                auto current_slot = slot;
+                                while (true) {
+                                    std::atomic<unsigned int>& ack = acks[current_slot];
+                                    unsigned int current_ack = ack.load(std::memory_order_acquire);
+                                    const auto current_apply = apply_index.load(std::memory_order_acquire);
+                                    // can only increment ack if (ack & start != 0)
+                                    if ((current_ack & APPLIED_MASK) == 0 || current_slot < current_apply) {
+                                        fprintf(stderr, "Breaking: %d\n", (current_slot < current_apply) ? 1 : 0);
+                                        break;
                                     }
-                                    fprintf(stderr, "]\n");
+                                    unsigned int next = current_ack;
+                                    if (current_slot == slot) {
+                                        ++next;
+                                    }
+
+                                    const auto has_majority = (next & (APPLIED_MASK - 1)) >= majority - 1;
+                                    const auto should_apply = current_slot == current_apply && has_majority;
+                                    if (should_apply) next = next & (APPLIED_MASK - 1);
+                                    if (ack.compare_exchange_strong(current_ack, next)) {
+                                        if (should_apply) {
+                                            fprintf(stderr, "[%d] Applied index: %d\n", thread_id, current_slot);
+                                            apply_index.fetch_add(1, std::memory_order_release);
+                                            ack.store(0, std::memory_order_release);
+                                            ++current_slot;
+                                            // propose out next
+                                        } else break;
+                                    }
                                 }
-
-                                // auto current_slot = slot;
-                                // int i = 0;
-                                // int j = 0;
-                                // while (i++ < 8000) {
-                                //     std::atomic<unsigned int>& ack = acks[current_slot];
-                                //     unsigned int current_ack = ack.load(std::memory_order_acquire);
-                                //     const auto current_apply = apply_index.load(std::memory_order_acquire);
-                                //     // can only increment ack if (ack & start != 0)
-                                //     if ((current_ack & APPLIED_MASK) == 0 || current_slot < current_apply) {
-                                //         fprintf(stderr, "Breaking: %d\n", (current_slot < current_apply) ? 1 : 0);
-                                //         break;
-                                //     }
-                                //     unsigned int next = current_ack;
-                                //     if (current_slot == slot) {
-                                //         ++next;
-                                //     }
-                                //     // apply = 0
-                                //     // 0 0 0 0
-                                //     // 1 2 1 2
-                                //
-                                //     //
-                                //     // slot 0     1     2     3
-                                //     // ack
-                                //
-                                //     const auto has_majority = (next & (APPLIED_MASK - 1)) >= majority - 1;
-                                //     const auto should_apply = current_slot == current_apply && has_majority;
-                                //     if (should_apply) next = next & (APPLIED_MASK - 1);
-                                //     if (ack.compare_exchange_strong(current_ack, next)) {
-                                //         if (should_apply) {
-                                //             fprintf(stderr, "[%d] Applied index: %d\n", thread_id, current_slot);
-                                //             apply_index.fetch_add(1, std::memory_order_release);
-                                //             ack.store(0, std::memory_order_release);
-                                //             ++current_slot;
-                                //             j++;
-                                //
-                                //             //
-                                //             // propose out next
-                                //         } else break;
-                                //     }
-                                // }
-                                // if (i >= 8000) {
-                                //     fprintf(stderr, "We spun so hard on slot: %d - %d\n", current_slot, j);
-                                // }
-
-
-
                             }
 
                             submit_provide_buffers(
@@ -325,25 +305,20 @@ void run_raft_udp(
                                 0,
                                 (void*) nullptr
                             );
-                        }
-                    )
+                            }
+                        )
 
-                    on_zc_send (
-                        if (completion.res < 0) {
+                        on_zc_send (
+                            if (completion.res < 0) {
                             std::cerr << "SEND_ZC failed: " << std::strerror(-completion.res) << std::endl;
-                        } else {
-                            if (completion.flags & IORING_CQE_F_NOTIF) {
-                                if (node_id == leader_id) {
-                                    ++wrote_out;
-                                }
+                            } else if (completion.flags & IORING_CQE_F_NOTIF) {
                                 const auto buffer_index = *static_cast<unsigned int*>(c_data);
                                 write_references[buffer_index] -= 1;
                                 if (write_references[buffer_index] == 0) {
                                     write_buffer_stack[write_buffer_stack_head++] = buffer_index;
                                 }
                             }
-                        }
-                    )
+                        )
                 )
             );
 
@@ -362,5 +337,3 @@ void run_raft_udp(
     delete[] log;
     delete[] acks;
 }
-
-
