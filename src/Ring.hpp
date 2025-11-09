@@ -253,8 +253,6 @@ do { \
         .buf_index= s_buffer_index                                                         \
     )
 
-
-
 #define submit_recv_multishot(fd_slot, buf_group, mshot_len, mshot_total_len, s_flags, s_data) \
     submit_with_args(IORING_OP_RECV, s_flags | IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE, s_data, \
         .fd = fd_slot,                                                                         \

@@ -84,6 +84,133 @@ constexpr int MAX_NODES = 31;
 //     return masks;
 // }();
 
+
+inline void run_raft_udp_client(
+    const unsigned int num_clients,
+    const unsigned int num_threads,
+    const unsigned int data_size,
+    const unsigned int num_ops,
+    const float read_ratio,
+    Address leader_address
+) {
+    std::vector<std::thread> local_workers;
+    local_workers.reserve(num_threads);
+
+    const unsigned int cli_per_thread = num_clients / num_threads;
+    const unsigned int total_clients = cli_per_thread * num_threads;
+    std::atomic ready_clients{ total_clients };
+    std::atomic completed_clients{ total_clients };
+
+    const unsigned int ops_per_client = num_ops / num_threads;
+    const unsigned int buffer_size = data_size + 100;
+
+    for (int i = 0; i < num_threads; i++) {
+        local_workers.emplace_back([cli_per_thread, &leader_address, ops_per_client, data_size,  buffer_size, &ready_clients, &completed_clients]() {
+            int client_sockets[cli_per_thread];
+            for (int j = 0; j < cli_per_thread; ++j) {
+                const auto client_socket = socket(AF_INET, SOCK_DGRAM, 0);
+                tune_udp_socket(client_socket);
+                if (connect(client_socket, reinterpret_cast<sockaddr *>(&leader_address.addr), sizeof(leader_address)) != 0) {
+                    throw std::runtime_error("Failed to connect to peer");
+                }
+                client_sockets[j] = client_socket;
+            }
+
+            constexpr unsigned int buffer_count = 10000;
+            std::vector<iovec> io_vecs(buffer_count);
+            const auto write_buffers = new char[buffer_count * data_size];
+            const auto write_references = new unsigned int[buffer_count];
+            const auto write_buffer_stack = new unsigned int[buffer_count];
+            auto write_buffer_stack_head = buffer_count;
+            for (size_t i = 0; i < buffer_count; ++i) {
+                io_vecs[i].iov_base = write_buffers + i * data_size;
+                io_vecs[i].iov_len = data_size;
+                write_references[i] = 0;
+                write_buffer_stack[i] = static_cast<unsigned int>(i);
+            }
+
+            char* read_buffers = nullptr;
+            if (posix_memalign(reinterpret_cast<void**>(&read_buffers), 4096, buffer_count * buffer_size) != 0) {
+                throw std::runtime_error("posix_memalign failed");
+            }
+
+            unsigned int completed_ops[cli_per_thread] = {};
+
+            run_ring(32000, 1,
+                 ring_init(
+                    io_uring_register(_r_ring_fd, IORING_REGISTER_BUFFERS, io_vecs.data(), buffer_count);
+                    io_uring_register(_r_ring_fd, IORING_REGISTER_FILES, client_sockets, cli_per_thread);
+                    submit_provide_buffers(read_buffers, data_size, buffer_count, 1, 0, 0, (void*) nullptr);
+                    for (int cli_index = 0; cli_index < cli_per_thread; ++cli_index) {
+                        submit_read_multishot(cli_index, 0, 1, 0, (void*) (uintptr_t) cli_index);
+                    }
+                    ready_clients.fetch_sub(1, std::memory_order_release);
+                    while (ready_clients.load(std::memory_order_acquire) != 0) {
+                        std::this_thread::yield();
+                    }
+
+                    for (int cli_index = 0; cli_index < cli_per_thread; ++cli_index) {
+
+                    }
+                    // wait on every other client to be ready to write, then submit 1 write/read for each client, wait for reads
+                 ),
+                 ring_loop(),
+                 ring_completions(
+                     on_multishot_read(
+                         if (completion.res <= 0) {
+                             std::cerr << "Socket closed or error during read: " << std::strerror(-completion.res) << std::endl;
+                         } else {
+                             const auto buf_id = completion.flags >> IORING_CQE_BUFFER_SHIFT;
+                             auto buffer = read_buffers + (buf_id * buffer_size);
+                             const auto cli_index = static_cast<unsigned int>(reinterpret_cast<uintptr_t>(c_data));
+                             completed_ops[cli_index] += 1;
+                             if (completed_ops[cli_index] == ops_per_client) {
+                                 completed_clients.fetch_sub(1, std::memory_order_release);
+                             } else {
+                                 // write out again
+                             }
+
+                             submit_provide_buffers(
+                                 buffer,
+                                 buffer_size,
+                                 1,
+                                 1,
+                                 buf_id,
+                                 0,
+                                 (void*) nullptr
+                            );
+                         }
+                     )
+
+                     on_zc_send (
+                         if (completion.res < 0) {
+                            std::cerr << "SEND_ZC failed: " << std::strerror(-completion.res) << std::endl;
+                         } else if (completion.flags & IORING_CQE_F_NOTIF) {
+                             const auto buffer_index = *static_cast<unsigned int*>(c_data);
+                             write_references[buffer_index] -= 1;
+                             if (write_references[buffer_index] == 0) {
+                                 write_buffer_stack[write_buffer_stack_head++] = buffer_index;
+                             }
+                         }
+                     )
+                 )
+            );
+
+            delete[] read_buffers;
+            delete[] write_buffers;
+        });
+    }
+
+    while (ready_clients.load(std::memory_order_acquire) != 0) { std::this_thread::yield(); }
+    const auto start_time = std::chrono::steady_clock::now();
+    while (completed_clients.load(std::memory_order_acquire) != 0) { std::this_thread::yield(); }
+    const auto end_time = std::chrono::steady_clock::now();
+    const auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
+    std::cout << "Duration: " << duration << std::endl;
+
+    for (auto &worker: local_workers) { worker.join(); }
+}
+
 template <size_t max_clients, size_t message_size>
 unsigned char run_raft_udp_client_listener(
     const unsigned char node_id,
@@ -121,16 +248,31 @@ unsigned char run_raft_udp_client_listener(
             tune_udp_socket(listener_socket);
             listener_sockets[0] = listener_socket;
 
-            char* read_buffers = nullptr;
-            if (posix_memalign(reinterpret_cast<void**>(&read_buffers), 4096, (max_clients * 4) * message_size) != 0) {
+            constexpr unsigned int buffer_count = 15800;
+            std::vector<iovec> io_vecs(buffer_count);
+            const auto write_buffers = new char[buffer_count * message_size];
+            const auto write_references = new unsigned int[buffer_count];
+            const auto write_buffer_stack = new unsigned int[buffer_count];
+            auto write_buffer_stack_head = buffer_count;
+
+            for (size_t i = 0; i < buffer_count; ++i) {
+                io_vecs[i].iov_base = write_buffers + i * message_size;
+                io_vecs[i].iov_len = message_size;
+                write_references[i] = 0;
+                write_buffer_stack[i] = static_cast<unsigned int>(i);
+            }
+
+            char *read_buffers = nullptr;
+            if (posix_memalign(reinterpret_cast<void **>(&read_buffers), 4096, buffer_count * message_size) != 0) {
                 throw std::runtime_error("posix_memalign failed");
             }
 
-            run_ring(max_clients * 4, 1,
+            run_ring(32000, 1,
                 ring_init(
                     io_uring_register(_r_ring_fd, IORING_REGISTER_FILES, listener_sockets, 1);
-                    submit_provide_buffers(read_buffers, message_size, (max_clients * 4), 1, 0, 0, (void*) nullptr);
-                    submit_read_multishot(0, 0, 1, 0, (void*) nullptr);
+                    io_uring_register(_r_ring_fd, IORING_REGISTER_BUFFERS, io_vecs.data(), buffer_count);
+                    submit_provide_buffers(read_buffers, message_size, buffer_count, 1, 0, 0, (void*) nullptr);
+                    submit_read_multishot(0, 0, 1, 0, (void*) nullptr); // swap to recvmsg
                     promise.set_value(_r_ring_fd);
                 ),
                 ring_loop(),
@@ -141,10 +283,17 @@ unsigned char run_raft_udp_client_listener(
                         } else {
                             const auto buf_id = completion.flags >> IORING_CQE_BUFFER_SHIFT;
                             auto buffer = read_buffers + (buf_id * message_size);
+
+
                         }
                     );
                 )
             );
+
+            delete[] read_buffers;
+            delete[] write_buffers;
+            delete[] write_references;
+            delete[] write_buffer_stack;
         });
 
         return waiter.get();
@@ -298,11 +447,9 @@ void run_raft_udp(
                                 unsigned short buffer_index = write_buffer_stack[write_buffer_head];
                                 write_references[buffer_index] = peers.size() - 1;
                                 const auto ack_buffer = write_buffers + buffer_index * message_size;
-                                // fprintf(stderr, "Acking back for slot: %d\n", slot);
                                 ack_buffer[0] = OP_ACK;
                                 std::memcpy(ack_buffer + 1, &slot, sizeof(slot));
-                                // fprintf(stderr, "[%d] Got propose for slot: %d\n", thread_id, slot);
-                                // fprintf(stderr, "Follower got propose: slot=%d buf=%d seq=%d\n", slot, buf_id, seq_id);
+
                                 submit_send_zc(
                                     leader_id + 1,
                                     ack_buffer,
@@ -363,7 +510,7 @@ void run_raft_udp(
 
                         on_zc_send (
                             if (completion.res < 0) {
-                            std::cerr << "SEND_ZC failed: " << std::strerror(-completion.res) << std::endl;
+                                std::cerr << "SEND_ZC failed: " << std::strerror(-completion.res) << std::endl;
                             } else if (completion.flags & IORING_CQE_F_NOTIF) {
                                 const auto buffer_index = *static_cast<unsigned int*>(c_data);
                                 write_references[buffer_index] -= 1;
