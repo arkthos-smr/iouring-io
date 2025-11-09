@@ -11,6 +11,8 @@
 #include <iostream>
 #include <future>
 
+#include "Queue.h"
+
 inline void tune_udp_socket(const int fd) {
     if (fd < 0) {
         throw std::invalid_argument("Invalid socket descriptor");
@@ -74,31 +76,97 @@ constexpr unsigned char MSG_ACK = 1;
 
 constexpr unsigned int APPLIED_MASK = 1u << 31;
 constexpr int MAX_NODES = 31;
-constexpr std::array<unsigned int, MAX_NODES> NODE_MASKS = []() {
-    std::array<unsigned int, MAX_NODES> masks = {};
-    for (int i = 0; i < MAX_NODES; ++i) {
-        masks[i] = 1u << (30 - i);
+// constexpr std::array<unsigned int, MAX_NODES> NODE_MASKS = []() {
+//     std::array<unsigned int, MAX_NODES> masks = {};
+//     for (int i = 0; i < MAX_NODES; ++i) {
+//         masks[i] = 1u << (30 - i);
+//     }
+//     return masks;
+// }();
+
+template <size_t max_clients, size_t message_size>
+unsigned char run_raft_udp_client_listener(
+    const unsigned char node_id,
+    const unsigned char leader_id,
+    Address client_listen_address,
+    ClientQueue<max_clients>& client_queue,
+    std::vector<std::thread>& local_workers
+) {
+     if (node_id == leader_id) {
+        std::promise<unsigned char> promise;
+        std::future<unsigned char> waiter = promise.get_future();
+        local_workers.emplace_back([&promise, &client_listen_address, client_queue]() {
+            int listener_sockets[1];
+            const auto listener_socket = socket(AF_INET, SOCK_DGRAM, 0);
+            if (listener_socket < 0) {
+                throw std::runtime_error("Failed to create server socket");
+            }
+
+            constexpr int flag = 1;
+            if (setsockopt(listener_socket, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
+                close(listener_socket);
+                throw std::runtime_error("error setting reuseaddr opt");
+            }
+
+            if (setsockopt(listener_socket, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
+                close(listener_socket);
+                throw std::runtime_error("Failed to set SO_REUSEPORT");
+            }
+
+            if (bind(listener_socket, reinterpret_cast<sockaddr*>(&client_listen_address.addr), sizeof(client_listen_address.addr)) < 0) {
+                close(listener_socket);
+                throw std::runtime_error("bind failed");
+            }
+
+            tune_udp_socket(listener_socket);
+            listener_sockets[0] = listener_socket;
+
+            char* read_buffers = nullptr;
+            if (posix_memalign(reinterpret_cast<void**>(&read_buffers), 4096, (max_clients * 4) * message_size) != 0) {
+                throw std::runtime_error("posix_memalign failed");
+            }
+
+            run_ring(max_clients * 4, 1,
+                ring_init(
+                    io_uring_register(_r_ring_fd, IORING_REGISTER_FILES, listener_sockets, 1);
+                    submit_provide_buffers(read_buffers, message_size, (max_clients * 4), 1, 0, 0, (void*) nullptr);
+                    submit_read_multishot(0, 0, 1, 0, (void*) nullptr);
+                    promise.set_value(_r_ring_fd);
+                ),
+                ring_loop(),
+                ring_completions(
+                    on_multishot_read(
+                        if (completion.res <= 0) {
+                            std::cerr << "Socket closed or error during read: " << std::strerror(-completion.res) << std::endl;
+                        } else {
+                            const auto buf_id = completion.flags >> IORING_CQE_BUFFER_SHIFT;
+                            auto buffer = read_buffers + (buf_id * message_size);
+                        }
+                    );
+                )
+            );
+        });
+
+        return waiter.get();
     }
-    return masks;
-}();
 
-static std::atomic<uint32_t> global_sequence_number{0};
-
-// Function to get next sequence number
-uint32_t get_next_sequence_number() {
-    return global_sequence_number.fetch_add(1, std::memory_order_relaxed);
+    return 0;
 }
 
-
-template<size_t log_size, size_t message_size, size_t threads, size_t pipes>
+template<size_t log_size, size_t message_size, size_t threads, size_t pipes, size_t max_clients>
 void run_raft_udp(
     const unsigned char node_id,
     const unsigned char leader_id,
+    Address client_listen_address,
     std::vector<Address> &peers
 ) {
     static_assert(pipes < log_size, "log size must be larger than total pipes");
     std::vector<std::thread> local_workers;
     local_workers.reserve(threads);
+
+    ClientQueue<max_clients> client_queue;
+    const unsigned char client_listen_fd = run_raft_udp_client_listener(node_id, leader_id, client_listen_address, client_queue, local_workers);
+    std::cout << "client listen fd" << client_listen_fd << std::endl;
 
     std::atomic<unsigned int> apply_index{0};
     auto acks = new std::atomic<unsigned int>[log_size];
@@ -108,7 +176,7 @@ void run_raft_udp(
     }
 
     const auto pipes_per_thread = pipes / threads;
-    for (int thread_id = 0; thread_id < threads; thread_id++) {
+    for (unsigned int thread_id = 0; thread_id < threads; thread_id++) {
         local_workers.emplace_back([&apply_index, &acks, &peers, pipes_per_thread, node_id, leader_id, thread_id]() {
             int peer_sockets[peers.size() + 1];
             const auto majority = peers.size() / 2 + 1;
@@ -154,15 +222,6 @@ void run_raft_udp(
             const auto write_buffer_stack = new unsigned int[buffer_count];
             auto write_buffer_stack_head = buffer_count;
 
-            // if (node_id == leader_id) {
-            //     auto future = std::async(std::launch::async, [&wrote_out]() {
-            //         while (RUNNING.load()) {
-            //             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-            //             fprintf(stderr, "Wrote out: %d\n", wrote_out);
-            //         }
-            //     });
-            // }
-
             for (size_t i = 0; i < buffer_count; ++i) {
                 io_vecs[i].iov_base = write_buffers + i * message_size;
                 io_vecs[i].iov_len = message_size;
@@ -174,11 +233,6 @@ void run_raft_udp(
             if (posix_memalign(reinterpret_cast<void **>(&read_buffers), 4096, buffer_count * message_size) != 0) {
                 throw std::runtime_error("posix_memalign failed");
             }
-
-            int max_seen = 0;
-            int ack_order[log_size];
-            int test = 0;
-            // int min_seen = 0;
 
             run_ring(
                 32000, 1,
@@ -192,37 +246,36 @@ void run_raft_udp(
                         for (int i = 0; i < pipes_per_thread; i++) {
                             const auto write_buffer_head = --write_buffer_stack_head;
                             if (write_buffer_head < 0) throw std::runtime_error("write_buffer_id is negative");
-                                unsigned short buffer_index = write_buffer_stack[write_buffer_head];
-                                write_references[buffer_index] = peers.size() - 1;
-                                const auto buffer = write_buffers + buffer_index * message_size;
-                                const unsigned int slot = thread_id * (pipes / threads) + i;
-                                buffer[0] = OP_PROPOSE;
-                                std::memcpy(buffer + 1, &slot, sizeof(slot));
+                            unsigned short buffer_index = write_buffer_stack[write_buffer_head];
+                            write_references[buffer_index] = peers.size() - 1;
+                            const auto buffer = write_buffers + buffer_index * message_size;
+                            const unsigned int slot = thread_id * (pipes / threads) + i;
+                            buffer[0] = OP_PROPOSE;
+                            std::memcpy(buffer + 1, &slot, sizeof(slot));
 
-                                std::atomic<unsigned int>& ack = acks[slot];
-                                ack.fetch_or(APPLIED_MASK, std::memory_order_release);
+                            std::atomic<unsigned int>& ack = acks[slot];
+                            ack.fetch_or(APPLIED_MASK, std::memory_order_release);
 
-                                buffer[5] = MSG_NULL;
-                                for (int peer_id = 0; peer_id < peers.size(); ++peer_id) {
-                                    if (peer_id != node_id) {
-                                        submit_send_zc(
-                                            peer_id + 1,
-                                            buffer,
-                                            6,
-                                            nullptr,
-                                            0,
-                                            buffer_index,
-                                            0,
-                                            0,
-                                            0,
-                                            (void*) &write_buffer_stack[write_buffer_head]
-                                        );
-                                    }
+                            buffer[5] = MSG_NULL;
+                            for (int peer_id = 0; peer_id < peers.size(); ++peer_id) {
+                                if (peer_id != node_id) {
+                                    submit_send_zc(
+                                        peer_id + 1,
+                                        buffer,
+                                        6,
+                                        nullptr,
+                                        0,
+                                        buffer_index,
+                                        0,
+                                        0,
+                                        0,
+                                        (void*) &write_buffer_stack[write_buffer_head]
+                                    );
                                 }
                             }
-
-                            fprintf(stderr, "Wrote out all packets from thread: %d\n", thread_id);
                         }
+                        fprintf(stderr, "Wrote out all packets from thread: %d\n", thread_id);
+                    }
                 ),
                 ring_loop(),
                 ring_completions(

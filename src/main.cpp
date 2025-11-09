@@ -5,8 +5,6 @@
 #include "Ring.hpp"
 #include "Raft.h"
 
-
-
 void shutdown(const int signum) {
     std::cout << "Received signal: " << signum << std::endl;
     RUNNING.store(false);
@@ -42,3 +40,5 @@ int main() {
 
     return 0;
 }
+
+
