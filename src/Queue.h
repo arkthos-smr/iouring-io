@@ -3,22 +3,22 @@
 
 class ClientEntry {
     char* data;
-    int buf_index;
+    unsigned int buf_index;
 public:
     ClientEntry() : data(nullptr), buf_index(-1) {}
-    ClientEntry(char* data, const int buf_index) : data(data), buf_index(buf_index) {}
+    ClientEntry(char* data, const unsigned int buf_index) : data(data), buf_index(buf_index) {}
     [[nodiscard]] char* get_data() const { return data; }
-    [[nodiscard]] int get_buf_index() const { return buf_index; }
+    [[nodiscard]] unsigned int get_buf_index() const { return buf_index; }
 };
 
 template <unsigned int capacity>
 class ClientQueue {
 public:
     explicit ClientQueue() {
-        data.fill(ClientEntry { nullptr, -1 });
+        data.fill(ClientEntry { nullptr, 0 });
     }
 
-    void push(char* entry_data, const int buf_index) {
+    void push(char* entry_data, const unsigned int buf_index) {
         const auto current_head = head.load(std::memory_order_relaxed);
         if (current_head - tail.load(std::memory_order_acquire) >= capacity) {
             throw std::runtime_error("Queue is full!");

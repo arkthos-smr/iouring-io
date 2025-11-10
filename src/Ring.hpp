@@ -204,16 +204,6 @@ do { \
         .fd = futex_flags                                                  \
     )
 
-#define submit_msg_ring(target_ring_fd, len, cmd, src_fd, dst_fd, msg_ring_flags, s_flags, s_data) \
-    submit_with_args(IORING_OP_MSG_RING, s_flags, s_data,                                          \
-        .fd = target_ring_fd,                                                                      \
-        .len = len,                                                                                \
-        .addr = cmd,                                                                               \
-        .addr3 = src_fd,                                                                           \
-        .file_index = dst_fd,                                                                      \
-        .msg_ring_flags = msg_ring_flags                                                           \
-    )
-
 #define submit_accept_multishot(socket, cli_addr, cli_addr_len, s_flags, s_data) \
     submit_with_args(IORING_OP_ACCEPT, s_flags, s_data,              \
         .fd = socket,                                                    \
@@ -263,6 +253,33 @@ do { \
         .msg_flags = 0                                                                         \
     )
 
+#define submit_recvmsg_multishot(fd_slot, buffer_group, msghdr_ptr, msg_len, message_flags, s_flags, s_data) \
+    submit_with_args(                                                                            \
+        IORING_OP_RECVMSG,                                                                       \
+        s_flags | IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE,                                                  \
+        s_data,                                                                               \
+        .fd = fd_slot,                                                                           \
+        .addr = (uint64_t)(msghdr_ptr),                                                          \
+        .len = msg_len,                                                                          \
+        .buf_group = buffer_group,                                                                  \
+        .ioprio = IORING_RECV_MULTISHOT,                                                         \
+        .optlen = 0,                                                                             \
+        .msg_flags = message_flags                                                                   \
+    )
+
+#define submit_msg_ring(target_ring_fd, message_data, message_len, msg_flags, s_flags, s_data) \
+    submit_with_args(                                                                       \
+        IORING_OP_MSG_RING,                                                                 \
+        s_flags,                                                                            \
+        s_data,                                                                             \
+        .fd = (target_ring_fd),                                                        \
+        .len = (message_len),                                                               \
+        .off = (reinterpret_cast<unsigned long long>(s_data) | ((IORING_OP_MSG_RING) * OP_SHIFT)),                              \
+        .msg_ring_flags = (msg_flags)                                                       \
+    )
+
+
+
 #define submit_read_multishot(fd_slot, offset, buffer_group, s_flags, s_data)                               \
     submit_with_args(IORING_OP_READ_MULTISHOT, s_flags | IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE, s_data, \
         .fd = fd_slot,                                                                                   \
@@ -291,7 +308,9 @@ do { \
 #define on_connect(block)   if (c_opcode == IORING_OP_CONNECT)     { block }
 #define on_provide_buffers(block) if (c_opcode == IORING_OP_PROVIDE_BUFFERS) { block }
 #define on_multishot_read(block) if (c_opcode == IORING_OP_READ_MULTISHOT)         { block }
+#define on_recvmsg(block) if (c_opcode == IORING_OP_RECVMSG) { block }
 #define on_zc_send(block) if (c_opcode == IORING_OP_SEND_ZC)              { block }
+#define on_ring_msg(block) if (c_opcode == IORING_OP_MSG_RING)         { block }
 
 #define ring_init(code) do { code } while(0);
 #define ring_loop(code) do { code } while(0);

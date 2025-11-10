@@ -25,8 +25,10 @@ int main() {
         Address { "127.0.0.1", 6984 },
         Address { "127.0.0.1", 6985 }
     };
-    workers.emplace_back([&](){ run_raft_udp<200000, 100, 5, 500>(0, 0, peers); });
-    workers.emplace_back([&]() { run_raft_udp<200000, 100, 5, 500>(1, 0, peers); });
+    Address listen1 { "127.0.0.1", 6969 };
+    Address listen2 { "127.0.0.1", 6968 };
+    workers.emplace_back([&](){ run_raft_udp<200000, 500, 1, 500, 1024>(0, 0, listen1, peers); });
+    // workers.emplace_back([&]() { run_raft_udp<200000, 100, 1, 500, 1024>(1, 0, listen2, peers); });
 
     while (RUNNING.load()) {
         pause();

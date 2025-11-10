@@ -13,6 +13,10 @@
 
 #include "Queue.h"
 
+// sudo sysctl -w net.core.rmem_max=1073741824 net.core.rmem_max = 1073741824
+// sudo sysctl -w net.core.rmem_default=1073741824 net.core.rmem_default = 1073741824
+// sudo sysctl -w net.ipv4.udp_rmem_min=65536 net.ipv4.udp_rmem_min = 65536
+
 inline void tune_udp_socket(const int fd) {
     if (fd < 0) {
         throw std::invalid_argument("Invalid socket descriptor");
@@ -76,14 +80,6 @@ constexpr unsigned char MSG_ACK = 1;
 
 constexpr unsigned int APPLIED_MASK = 1u << 31;
 constexpr int MAX_NODES = 31;
-// constexpr std::array<unsigned int, MAX_NODES> NODE_MASKS = []() {
-//     std::array<unsigned int, MAX_NODES> masks = {};
-//     for (int i = 0; i < MAX_NODES; ++i) {
-//         masks[i] = 1u << (30 - i);
-//     }
-//     return masks;
-// }();
-
 
 inline void run_raft_udp_client(
     const unsigned int num_clients,
@@ -122,11 +118,11 @@ inline void run_raft_udp_client(
             const auto write_references = new unsigned int[buffer_count];
             const auto write_buffer_stack = new unsigned int[buffer_count];
             auto write_buffer_stack_head = buffer_count;
-            for (size_t i = 0; i < buffer_count; ++i) {
-                io_vecs[i].iov_base = write_buffers + i * data_size;
-                io_vecs[i].iov_len = data_size;
-                write_references[i] = 0;
-                write_buffer_stack[i] = static_cast<unsigned int>(i);
+            for (size_t buf_id = 0; buf_id < buffer_count; ++buf_id) {
+                io_vecs[buf_id].iov_base = write_buffers + buf_id * data_size;
+                io_vecs[buf_id].iov_len = data_size;
+                write_references[buf_id] = 0;
+                write_buffer_stack[buf_id] = static_cast<unsigned int>(buf_id);
             }
 
             char* read_buffers = nullptr;
@@ -134,7 +130,7 @@ inline void run_raft_udp_client(
                 throw std::runtime_error("posix_memalign failed");
             }
 
-            unsigned int completed_ops[cli_per_thread] = {};
+            unsigned int completed_ops[cli_per_thread];
 
             run_ring(32000, 1,
                  ring_init(
@@ -222,7 +218,7 @@ unsigned char run_raft_udp_client_listener(
      if (node_id == leader_id) {
         std::promise<unsigned char> promise;
         std::future<unsigned char> waiter = promise.get_future();
-        local_workers.emplace_back([&promise, &client_listen_address, client_queue]() {
+        local_workers.emplace_back([&promise, &client_listen_address, &client_queue]() {
             int listener_sockets[1];
             const auto listener_socket = socket(AF_INET, SOCK_DGRAM, 0);
             if (listener_socket < 0) {
@@ -242,7 +238,7 @@ unsigned char run_raft_udp_client_listener(
 
             if (bind(listener_socket, reinterpret_cast<sockaddr*>(&client_listen_address.addr), sizeof(client_listen_address.addr)) < 0) {
                 close(listener_socket);
-                throw std::runtime_error("bind failed");
+                throw std::runtime_error("failed to bind client listener");
             }
 
             tune_udp_socket(listener_socket);
@@ -267,29 +263,66 @@ unsigned char run_raft_udp_client_listener(
                 throw std::runtime_error("posix_memalign failed");
             }
 
+            auto *msg = new msghdr{};
+            memset(msg, 0, sizeof(*msg));
+            auto *src_addr4 = new sockaddr_in{};
+            msg->msg_name    = src_addr4;
+            msg->msg_namelen = sizeof(*src_addr4);
+            msg->msg_control = nullptr;
+            msg->msg_controllen = 0;
+
             run_ring(32000, 1,
                 ring_init(
                     io_uring_register(_r_ring_fd, IORING_REGISTER_FILES, listener_sockets, 1);
                     io_uring_register(_r_ring_fd, IORING_REGISTER_BUFFERS, io_vecs.data(), buffer_count);
                     submit_provide_buffers(read_buffers, message_size, buffer_count, 1, 0, 0, (void*) nullptr);
-                    submit_read_multishot(0, 0, 1, 0, (void*) nullptr); // swap to recvmsg
+                    submit_recvmsg_multishot(
+                        0,
+                        1,
+                        msg,
+                        0,
+                        0,
+                        0,
+                        (void*)nullptr
+                    );
                     promise.set_value(_r_ring_fd);
                 ),
                 ring_loop(),
                 ring_completions(
-                    on_multishot_read(
+                    on_recvmsg(
                         if (completion.res <= 0) {
-                            std::cerr << "Socket closed or error during read: " << std::strerror(-completion.res) << std::endl;
+                            std::cerr << "Socket closed or error during read: " << std::strerror(-completion.res) << " - " << completion.res << std::endl;
                         } else {
-                            const auto buf_id = completion.flags >> IORING_CQE_BUFFER_SHIFT;
-                            auto buffer = read_buffers + (buf_id * message_size);
+                            if (!(completion.flags & IORING_CQE_F_BUFFER)) {
+                                throw std::runtime_error("Socket closed because out of buffers!");
+                            }
+                            const unsigned int buf_id = completion.flags >> IORING_CQE_BUFFER_SHIFT;
+                            const auto buffer = read_buffers + (buf_id * message_size);
+                            // client_queue.push(ClientEntry { buffer, buf_id });
+                        }
+                    );
 
+                    on_ring_msg(
+                        if (completion.res == 1) {
+                            // parse out buf id and buffer and submit.
 
+                            fprintf(stderr, "Got a ring message!\n");
+                            // submit_provide_buffers(
+                            //     buffer,
+                            //     message_size,
+                            //     1,
+                            //     1,
+                            //     buf_id,
+                            //     0,
+                            //     (void*) nullptr
+                            // );
                         }
                     );
                 )
             );
 
+            delete msg;
+            delete src_addr4;
             delete[] read_buffers;
             delete[] write_buffers;
             delete[] write_references;
@@ -314,8 +347,8 @@ void run_raft_udp(
     local_workers.reserve(threads);
 
     ClientQueue<max_clients> client_queue;
-    const unsigned char client_listen_fd = run_raft_udp_client_listener(node_id, leader_id, client_listen_address, client_queue, local_workers);
-    std::cout << "client listen fd" << client_listen_fd << std::endl;
+    const unsigned char client_listen_fd = run_raft_udp_client_listener<max_clients, message_size>(node_id, leader_id, client_listen_address, client_queue, local_workers);
+    std::cout << "client listen fd: " << static_cast<int>(client_listen_fd) << std::endl;
 
     std::atomic<unsigned int> apply_index{0};
     auto acks = new std::atomic<unsigned int>[log_size];
@@ -326,7 +359,7 @@ void run_raft_udp(
 
     const auto pipes_per_thread = pipes / threads;
     for (unsigned int thread_id = 0; thread_id < threads; thread_id++) {
-        local_workers.emplace_back([&apply_index, &acks, &peers, pipes_per_thread, node_id, leader_id, thread_id]() {
+        local_workers.emplace_back([client_listen_fd, &apply_index, &acks, &peers, pipes_per_thread, node_id, leader_id, thread_id]() {
             int peer_sockets[peers.size() + 1];
             const auto majority = peers.size() / 2 + 1;
             auto node_address = peers[node_id];
@@ -391,6 +424,15 @@ void run_raft_udp(
                     submit_provide_buffers(read_buffers, message_size, buffer_count, 1, 0, 0, (void*) nullptr);
                     submit_read_multishot(0, 0, 1, 0, (void*) nullptr);
 
+                    submit_msg_ring(
+                        client_listen_fd,
+                        123456789ULL,
+                        1,
+                        0,
+                        0,
+                        (void*) nullptr
+                    );
+
                     if (node_id == leader_id) {
                         for (int i = 0; i < pipes_per_thread; i++) {
                             const auto write_buffer_head = --write_buffer_stack_head;
@@ -408,18 +450,18 @@ void run_raft_udp(
                             buffer[5] = MSG_NULL;
                             for (int peer_id = 0; peer_id < peers.size(); ++peer_id) {
                                 if (peer_id != node_id) {
-                                    submit_send_zc(
-                                        peer_id + 1,
-                                        buffer,
-                                        6,
-                                        nullptr,
-                                        0,
-                                        buffer_index,
-                                        0,
-                                        0,
-                                        0,
-                                        (void*) &write_buffer_stack[write_buffer_head]
-                                    );
+                                    // submit_send_zc(
+                                    //     peer_id + 1,
+                                    //     buffer,
+                                    //     6,
+                                    //     nullptr,
+                                    //     0,
+                                    //     buffer_index,
+                                    //     0,
+                                    //     0,
+                                    //     0,
+                                    //     (void*) &write_buffer_stack[write_buffer_head]
+                                    // );
                                 }
                             }
                         }
