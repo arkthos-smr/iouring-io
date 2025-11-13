@@ -23,28 +23,55 @@ std::thread thread_guard(std::string_view label, Fn&& fn) {
     });
 }
 
-class Address {
-    std::string host;
-    uint16_t port;
-    sockaddr_in addr{};
+struct Address {
+    unsigned char a, b, c, d;
+    unsigned short port;
 
-public:
-    Address() = default;
-
-    Address(const std::string &host, const unsigned short port) : host(host), port(port) {
-        std::memset(&addr, 0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
-        if (inet_pton(AF_INET, host.c_str(), &addr.sin_addr) <= 0) {
-            addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        }
+    constexpr Address(unsigned char a,
+                      unsigned char b,
+                      unsigned char c,
+                      unsigned char d,
+                      unsigned short port)
+        : a(a), b(b), c(c), d(d), port(port) {
     }
 
-    [[nodiscard]] std::string_view get_host() const noexcept { return host; }
-    [[nodiscard]] uint16_t get_port() const noexcept { return port; }
-    [[nodiscard]] const sockaddr_in &get_sockaddr() const noexcept { return addr; }
-    [[nodiscard]] sockaddr_in &get_sockaddr_mut() noexcept { return addr; }
+    [[nodiscard]] sockaddr_in to_sockaddr() const noexcept {
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        const unsigned int ip =
+                static_cast<unsigned int>(a) << 24 |
+                static_cast<unsigned int>(b) << 16 |
+                static_cast<unsigned int>(c) << 8 |
+                static_cast<unsigned int>(d);
+
+        addr.sin_addr.s_addr = htonl(ip);
+        return addr;
+    }
 };
+
+// class Address {
+//     std::string host;
+//     uint16_t port;
+//     sockaddr_in addr{};
+//
+// public:
+//     Address() = default;
+//
+//     Address(const std::string &host, const unsigned short port) : host(host), port(port) {
+//         std::memset(&addr, 0, sizeof(addr));
+//         addr.sin_family = AF_INET;
+//         addr.sin_port = htons(port);
+//         if (inet_pton(AF_INET, host.c_str(), &addr.sin_addr) <= 0) {
+//             addr.sin_addr.s_addr = htonl(INADDR_ANY);
+//         }
+//     }
+//
+//     [[nodiscard]] std::string_view get_host() const noexcept { return host; }
+//     [[nodiscard]] uint16_t get_port() const noexcept { return port; }
+//     [[nodiscard]] const sockaddr_in &get_sockaddr() const noexcept { return addr; }
+//     [[nodiscard]] sockaddr_in &get_sockaddr_mut() noexcept { return addr; }
+// };
 
 
 inline void tune_udp_socket(const int fd, const unsigned int buf_size) {
@@ -102,7 +129,7 @@ inline int setup_server_socket(const Address &address, const unsigned int buf_si
         throw std::runtime_error("Failed to set SO_REUSEPORT");
     }
 
-    const sockaddr_in &addr = address.get_sockaddr();
+    const sockaddr_in &addr = address.to_sockaddr();
     if (bind(fd, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) < 0) {
         close(fd);
         throw std::runtime_error("Failed to bind server socket");

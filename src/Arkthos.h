@@ -10,7 +10,14 @@ struct Config {
     static constexpr unsigned int Pipes = 1;
     static constexpr unsigned int ListenerThreads = 1;
     static constexpr unsigned char NodeId = 0;
-    static constexpr const char* ListenerHost = "127.0.0.1";
+    static constexpr Address ListenerAddress = Address(127, 0, 0, 1, 6969);
+
+    static constexpr unsigned char ListenerA = 127;
+    static constexpr unsigned char ListenerB = 0;
+    static constexpr unsigned char ListenerC = 0;
+    static constexpr unsigned char ListenerD = 1;
+
+    // Base port for client listener addresses
     static constexpr unsigned short ListenerPort = 6969;
 
     // Multicast base IP: 239.10.0.100
@@ -43,10 +50,10 @@ concept ArkthosConfig =
         };
 
 inline void run_arkthos_listener(
-    const unsigned int thread_id
+    const unsigned int thread_id,
+    const std::array<Address, Config::ListenerThreads>& listener_groups
 ) {
-    const Address thread_address = Address(std::string(Config::ListenerHost), Config::ListenerPort + thread_id);
-    const int listener_socket = setup_server_socket(thread_address, 1 << 30);
+    const int listener_socket = setup_server_socket(listener_groups[thread_id], 1 << 30);
 
     sockaddr_in src_addr{};
     socklen_t src_len = sizeof(src_addr);
@@ -79,6 +86,8 @@ inline void run_arkthos_listener(
     }
 }
 
+
+
 inline void run_arkthos_consensus(
     const unsigned int thread_id,
     const std::array<Address, Config::ConsensusThreads>& multicast_groups
@@ -106,39 +115,54 @@ inline void run_arkthos_consensus(
     }
 }
 
-
-
 template<ArkthosConfig Config>
 void run_arkthos_udp() {
     unsigned int worker_index = 0;
-    std::array<std::thread, Config::ListenerThreads + Config::ConsensusThreads> workers;
+    constexpr unsigned int TotalWorkers = Config::ListenerThreads + Config::ConsensusThreads;
+    std::array<std::thread, TotalWorkers> workers;
 
-    std::array<Address, Config::ConsensusThreads> multicast_groups;
-    for (unsigned int i = 0; i < Config::ConsensusThreads; i++) {
-        const std::string ip = std::format(
-            "{}.{}.{}.{}",
-            Config::McastA,
-            Config::McastB,
-            Config::McastC,
-            Config::McastDBase + i
-        );
-        multicast_groups[i] = Address(ip, static_cast<unsigned short>(Config::McastPortBase + i));
-    }
+    constexpr std::array<Address, Config::ConsensusThreads> multicast_groups = [] consteval {
+        std::array<Address, Config::ConsensusThreads> arr{};
+        for (unsigned int i = 0; i < Config::ConsensusThreads; ++i)
+            arr[i] = Address(
+                Config::McastA,
+                Config::McastB,
+                Config::McastC,
+                Config::McastDBase + i,
+                Config::McastPortBase + i
+            );
+        return arr;
+    }();
+
+    constexpr auto listener_groups = []() consteval {
+        std::array<Address, Config::ListenerThreads> arr{};
+        for (unsigned int i = 0; i < Config::ListenerThreads; ++i) {
+            arr[i] = Address(
+                Config::ListenerA,
+                Config::ListenerB,
+                Config::ListenerC,
+                Config::ListenerD,
+                static_cast<unsigned short>(Config::ListenerPort + i)
+            );
+        }
+        return arr;
+    }();
 
     using LogBuffer = std::array<char, Config::LogSize * Config::MaxMessageSize>;
     std::unique_ptr<LogBuffer> log = std::make_unique<LogBuffer>();
 
-    for (unsigned int thread_id = 0; thread_id < Config::ListenerThreads; ++thread_id) {
-        workers[worker_index++] = thread_guard("Listener Thread " + std::to_string(thread_id), [thread_id] {
-            run_arkthos_listener(thread_id);
-        });
+    for (unsigned int i = 0; i < TotalWorkers; ++i) {
+        workers[worker_index++] = i < Config::ListenerThreads
+            ? thread_guard(
+                  "Listener Thread " + std::to_string(i),
+                  [i, &listener_groups] { run_arkthos_listener(i, listener_groups); })
+            : thread_guard(
+                  "Consensus Thread " + std::to_string(i - Config::ListenerThreads),
+                  [thread_id = i - Config::ListenerThreads, &multicast_groups] {
+                      run_arkthos_consensus(thread_id, multicast_groups);
+                  });
     }
 
-    for (unsigned int thread_id = 0; thread_id < Config::ConsensusThreads; ++thread_id) {
-        workers[worker_index++] = thread_guard("Consensus Thread " + std::to_string(thread_id), [thread_id, &multicast_groups] {
-            run_arkthos_consensus(thread_id, multicast_groups);
-        });
-    }
 
     for (auto &worker: workers) {
         worker.join();
