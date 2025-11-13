@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <iostream>
 #include <future>
+#include "Temp.h"
 
 #include "Queue.h"
 
@@ -17,59 +18,59 @@
 // sudo sysctl -w net.core.rmem_default=1073741824 net.core.rmem_default = 1073741824
 // sudo sysctl -w net.ipv4.udp_rmem_min=65536 net.ipv4.udp_rmem_min = 65536
 
-inline void tune_udp_socket(const int fd) {
-    if (fd < 0) {
-        throw std::invalid_argument("Invalid socket descriptor");
-    }
-
-    int bufsize = 1 << 30; // 1 GB
-
-    // Increase send buffer
-    if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bufsize, sizeof(bufsize)) < 0) {
-        close(fd);
-        throw std::runtime_error("setsockopt(SO_SNDBUF) failed: " + std::string(std::strerror(errno)));
-    }
-
-    // Increase receive buffer
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bufsize, sizeof(bufsize)) < 0) {
-        close(fd);
-        throw std::runtime_error("setsockopt(SO_RCVBUF) failed: " + std::string(std::strerror(errno)));
-    }
-    //
-    // // Mark as low latency (IP_TOS = IPTOS_LOWDELAY)
-    // constexpr int tos = 0x10;
-    // if (setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)) < 0) {
-    //     close(fd);
-    //     throw std::runtime_error("setsockopt(IP_TOS) failed: " + std::string(std::strerror(errno)));
-    // }
-
-    // Make socket non-blocking
-    const int flags = fcntl(fd, F_GETFL, 0);
-    if (flags == -1) {
-        close(fd);
-        throw std::runtime_error("fcntl(F_GETFL) failed: " + std::string(std::strerror(errno)));
-    }
-
-    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
-        close(fd);
-        throw std::runtime_error("fcntl(F_SETFL, O_NONBLOCK) failed: " + std::string(std::strerror(errno)));
-    }
-}
-
-struct Address {
-    std::string host;
-    unsigned short port;
-    sockaddr_in addr{};
-
-    Address(const std::string &host, const unsigned short port) : host(host), port(port) {
-        std::memset(&addr, 0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
-        if (inet_pton(AF_INET, host.c_str(), &addr.sin_addr) <= 0) {
-            addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        }
-    }
-};
+// inline void tune_udp_socket(const int fd) {
+//     if (fd < 0) {
+//         throw std::invalid_argument("Invalid socket descriptor");
+//     }
+//
+//     int bufsize = 1 << 30; // 1 GB
+//
+//     // Increase send buffer
+//     if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bufsize, sizeof(bufsize)) < 0) {
+//         close(fd);
+//         throw std::runtime_error("setsockopt(SO_SNDBUF) failed: " + std::string(std::strerror(errno)));
+//     }
+//
+//     // Increase receive buffer
+//     if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bufsize, sizeof(bufsize)) < 0) {
+//         close(fd);
+//         throw std::runtime_error("setsockopt(SO_RCVBUF) failed: " + std::string(std::strerror(errno)));
+//     }
+//     //
+//     // // Mark as low latency (IP_TOS = IPTOS_LOWDELAY)
+//     // constexpr int tos = 0x10;
+//     // if (setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)) < 0) {
+//     //     close(fd);
+//     //     throw std::runtime_error("setsockopt(IP_TOS) failed: " + std::string(std::strerror(errno)));
+//     // }
+//
+//     // Make socket non-blocking
+//     const int flags = fcntl(fd, F_GETFL, 0);
+//     if (flags == -1) {
+//         close(fd);
+//         throw std::runtime_error("fcntl(F_GETFL) failed: " + std::string(std::strerror(errno)));
+//     }
+//
+//     if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
+//         close(fd);
+//         throw std::runtime_error("fcntl(F_SETFL, O_NONBLOCK) failed: " + std::string(std::strerror(errno)));
+//     }
+// }
+//
+// struct Address {
+//     std::string host;
+//     unsigned short port;
+//     sockaddr_in addr{};
+//
+//     Address(const std::string &host, const unsigned short port) : host(host), port(port) {
+//         std::memset(&addr, 0, sizeof(addr));
+//         addr.sin_family = AF_INET;
+//         addr.sin_port = htons(port);
+//         if (inet_pton(AF_INET, host.c_str(), &addr.sin_addr) <= 0) {
+//             addr.sin_addr.s_addr = htonl(INADDR_ANY);
+//         }
+//     }
+// };
 
 constexpr unsigned char OP_PROPOSE = 0;
 constexpr unsigned char OP_ACK = 1;
@@ -219,30 +220,7 @@ unsigned char run_raft_udp_client_listener(
         std::promise<unsigned char> promise;
         std::future<unsigned char> waiter = promise.get_future();
         local_workers.emplace_back([&promise, &client_listen_address, &client_queue]() {
-            int listener_sockets[1];
-            const auto listener_socket = socket(AF_INET, SOCK_DGRAM, 0);
-            if (listener_socket < 0) {
-                throw std::runtime_error("Failed to create server socket");
-            }
 
-            constexpr int flag = 1;
-            if (setsockopt(listener_socket, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
-                close(listener_socket);
-                throw std::runtime_error("error setting reuseaddr opt");
-            }
-
-            if (setsockopt(listener_socket, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
-                close(listener_socket);
-                throw std::runtime_error("Failed to set SO_REUSEPORT");
-            }
-
-            if (bind(listener_socket, reinterpret_cast<sockaddr*>(&client_listen_address.addr), sizeof(client_listen_address.addr)) < 0) {
-                close(listener_socket);
-                throw std::runtime_error("failed to bind client listener");
-            }
-
-            tune_udp_socket(listener_socket);
-            listener_sockets[0] = listener_socket;
 
             constexpr unsigned int buffer_count = 15800;
             std::vector<iovec> io_vecs(buffer_count);
