@@ -10,7 +10,6 @@ struct Config {
     static constexpr unsigned int Pipes = 1;
     static constexpr unsigned int ListenerThreads = 1;
     static constexpr unsigned char NodeId = 0;
-    static constexpr Address ListenerAddress = Address(127, 0, 0, 1, 6969);
 
     static constexpr unsigned char ListenerA = 127;
     static constexpr unsigned char ListenerB = 0;
@@ -30,24 +29,33 @@ struct Config {
 };
 
 template<typename T>
-concept ArkthosConfig =
-        requires
-        {
-            { T::LogSize } -> std::convertible_to<unsigned int>;
-            { T::MaxMessageSize } -> std::convertible_to<unsigned int>;
-            { T::ConsensusThreads } -> std::convertible_to<unsigned int>;
-            { T::Pipes } -> std::convertible_to<unsigned int>;
-            { T::ListenerThreads } -> std::convertible_to<unsigned int>;
-            { T::NodeId } -> std::convertible_to<unsigned char>;
-            { T::ListenerPort } -> std::convertible_to<unsigned short>;
-            { T::ListenerHost } -> std::convertible_to<const char*>;
+concept ArkthosConfig = requires {
+    // Log + message sizing
+    { T::LogSize } -> std::convertible_to<unsigned int>;
+    { T::MaxMessageSize } -> std::convertible_to<unsigned int>;
 
-            { T::McastA }            -> std::convertible_to<unsigned char>;
-            { T::McastB }            -> std::convertible_to<unsigned char>;
-            { T::McastC }            -> std::convertible_to<unsigned char>;
-            { T::McastDBase }        -> std::convertible_to<unsigned char>;
-            { T::McastPortBase }     -> std::convertible_to<unsigned short>;
-        };
+    // Thread topology
+    { T::ConsensusThreads } -> std::convertible_to<unsigned int>;
+    { T::Pipes } -> std::convertible_to<unsigned int>;
+    { T::ListenerThreads } -> std::convertible_to<unsigned int>;
+
+    // Node identity
+    { T::NodeId } -> std::convertible_to<unsigned char>;
+
+    // Listener IP (4 octets)
+    { T::ListenerA } -> std::convertible_to<unsigned char>;
+    { T::ListenerB } -> std::convertible_to<unsigned char>;
+    { T::ListenerC } -> std::convertible_to<unsigned char>;
+    { T::ListenerD } -> std::convertible_to<unsigned char>;
+    { T::ListenerPort } -> std::convertible_to<unsigned short>;
+
+    // Multicast base
+    { T::McastA } -> std::convertible_to<unsigned char>;
+    { T::McastB } -> std::convertible_to<unsigned char>;
+    { T::McastC } -> std::convertible_to<unsigned char>;
+    { T::McastDBase } -> std::convertible_to<unsigned char>;
+    { T::McastPortBase } -> std::convertible_to<unsigned short>;
+};
 
 inline void run_arkthos_listener(
     const unsigned int thread_id,
