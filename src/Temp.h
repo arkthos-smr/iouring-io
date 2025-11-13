@@ -6,12 +6,31 @@
 #include <string_view>
 #include <netinet/in.h>
 
+inline std::atomic RUNNING{true};
+
+template<typename Fn>
+std::thread thread_guard(std::string_view label, Fn&& fn) {
+    return std::thread([label, fn = std::forward<Fn>(fn)]() mutable {
+        try {
+            fn();
+        } catch (const std::exception& e) {
+            std::cerr << "[" << label << "] fatal exception: " << e.what() << std::endl;
+            RUNNING.store(false);
+        } catch (...) {
+            std::cerr << "[" << label << "] fatal unknown exception" << std::endl;
+            RUNNING.store(false);
+        }
+    });
+}
+
 class Address {
     std::string host;
     uint16_t port;
     sockaddr_in addr{};
 
 public:
+    Address() = default;
+
     Address(const std::string &host, const unsigned short port) : host(host), port(port) {
         std::memset(&addr, 0, sizeof(addr));
         addr.sin_family = AF_INET;
