@@ -23,32 +23,44 @@ std::thread thread_guard(std::string_view label, Fn&& fn) {
     });
 }
 
-struct Address {
-    unsigned char a, b, c, d;
-    unsigned short port;
+class Address {
+public:
+    constexpr Address() noexcept : a(0), b(0), c(0), d(0), port(0) {}
+    constexpr Address(
+        const unsigned char a,
+        const unsigned char b,
+        const unsigned char c,
+        const unsigned char d,
+        const unsigned short port
+    ) noexcept : a(a), b(b), c(c), d(d), port(port) {}
 
-    constexpr Address(unsigned char a,
-                      unsigned char b,
-                      unsigned char c,
-                      unsigned char d,
-                      unsigned short port)
-        : a(a), b(b), c(c), d(d), port(port) {
-    }
+    [[nodiscard]] constexpr unsigned char get_a() const noexcept { return a; }
+    [[nodiscard]] constexpr unsigned char get_b() const noexcept { return b; }
+    [[nodiscard]] constexpr unsigned char get_c() const noexcept { return c; }
+    [[nodiscard]] constexpr unsigned char get_d() const noexcept { return d; }
+    [[nodiscard]] constexpr unsigned short get_port() const noexcept { return port; }
 
     [[nodiscard]] sockaddr_in to_sockaddr() const noexcept {
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_port = htons(port);
+
         const unsigned int ip =
-                static_cast<unsigned int>(a) << 24 |
-                static_cast<unsigned int>(b) << 16 |
-                static_cast<unsigned int>(c) << 8 |
-                static_cast<unsigned int>(d);
+            (static_cast<unsigned int>(get_a()) << 24) |
+            (static_cast<unsigned int>(get_b()) << 16) |
+            (static_cast<unsigned int>(get_c()) << 8)  |
+             static_cast<unsigned int>(get_d());
 
         addr.sin_addr.s_addr = htonl(ip);
         return addr;
     }
+
+private:
+    unsigned char a, b, c, d;
+    unsigned short port;
 };
+
+
 
 // class Address {
 //     std::string host;

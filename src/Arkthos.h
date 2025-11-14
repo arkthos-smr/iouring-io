@@ -130,30 +130,30 @@ void run_arkthos_udp() {
     std::array<std::thread, TotalWorkers> workers;
 
     constexpr std::array<Address, Config::ConsensusThreads> multicast_groups = [] consteval {
-        std::array<Address, Config::ConsensusThreads> arr{};
+        std::array<Address, Config::ConsensusThreads> array;
         for (unsigned int i = 0; i < Config::ConsensusThreads; ++i)
-            arr[i] = Address(
+            array[i] = Address(
                 Config::McastA,
                 Config::McastB,
                 Config::McastC,
                 Config::McastDBase + i,
                 Config::McastPortBase + i
             );
-        return arr;
+        return array;
     }();
 
     constexpr auto listener_groups = []() consteval {
-        std::array<Address, Config::ListenerThreads> arr{};
+        std::array<Address, Config::ListenerThreads> array{};
         for (unsigned int i = 0; i < Config::ListenerThreads; ++i) {
-            arr[i] = Address(
+            array[i] = Address(
                 Config::ListenerA,
                 Config::ListenerB,
                 Config::ListenerC,
                 Config::ListenerD,
-                static_cast<unsigned short>(Config::ListenerPort + i)
+                Config::ListenerPort + i
             );
         }
-        return arr;
+        return array;
     }();
 
     using LogBuffer = std::array<char, Config::LogSize * Config::MaxMessageSize>;
@@ -163,7 +163,9 @@ void run_arkthos_udp() {
         workers[worker_index++] = i < Config::ListenerThreads
             ? thread_guard(
                   "Listener Thread " + std::to_string(i),
-                  [i, &listener_groups] { run_arkthos_listener(i, listener_groups); })
+                  [i, &listener_groups] {
+                      run_arkthos_listener(i, listener_groups);
+                  })
             : thread_guard(
                   "Consensus Thread " + std::to_string(i - Config::ListenerThreads),
                   [thread_id = i - Config::ListenerThreads, &multicast_groups] {

@@ -6,7 +6,15 @@
 #include <vector>
 
 void shutdown(const int signum) {
-    std::cout << "Received signal: " << signum << std::endl;
+    const char* name = "UNKNOWN";
+    switch (signum) {
+        case SIGINT:  name = "SIGINT";  break;
+        case SIGTERM: name = "SIGTERM"; break;
+        case SIGQUIT: name = "SIGQUIT"; break;
+        case SIGHUP:  name = "SIGHUP";  break;
+    }
+
+    fprintf(stderr, "\nShutting down with signal %s\n", name);
     RUNNING.store(false);
 }
 
@@ -25,15 +33,8 @@ int main() {
         run_arkthos_udp<Config>();
     });
 
-    while (RUNNING.load()) {
-        pause();
-    }
-
-    for (auto &worker : workers) {
-        worker.join();
-    }
-
-    std::cout << "Shutdown!" << std::endl;
+    while (RUNNING.load()) pause();
+    for (auto &worker : workers) worker.join();
 
     return 0;
 }
