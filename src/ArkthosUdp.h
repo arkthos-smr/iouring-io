@@ -3,13 +3,13 @@
 #include <netinet/in.h>
 #include "Temp.h"
 
-struct Config {
+struct ConfigUdp {
     static constexpr unsigned int LogSize = 1024;
     static constexpr unsigned int MaxMessageSize = 1400;
-    static constexpr unsigned int ConsensusThreads = 1;
+    static constexpr unsigned int ConsensusThreads = 2;
     static constexpr unsigned int Pipes = 1;
     static constexpr unsigned int ListenerThreads = 1;
-    static constexpr unsigned char NodeId = 0;
+    static constexpr unsigned char NodeId = 1;
 
     static constexpr unsigned char ListenerA = 127;
     static constexpr unsigned char ListenerB = 0;
@@ -26,10 +26,13 @@ struct Config {
     static constexpr unsigned char McastDBase = 100;
     // Base port for multicast groups
     static constexpr unsigned short McastPortBase = 9000;
+    static constexpr bool AllowLoopback = true;
+
+    static constexpr unsigned int RecvSendBufferSize = 1 << 30;
 };
 
 template<typename T>
-concept ArkthosConfig = requires {
+concept ArkthosConfigUdp = requires {
     // Log + message sizing
     { T::LogSize } -> std::convertible_to<unsigned int>;
     { T::MaxMessageSize } -> std::convertible_to<unsigned int>;
@@ -38,6 +41,7 @@ concept ArkthosConfig = requires {
     { T::ConsensusThreads } -> std::convertible_to<unsigned int>;
     { T::Pipes } -> std::convertible_to<unsigned int>;
     { T::ListenerThreads } -> std::convertible_to<unsigned int>;
+    { T::RecvSendBufferSize } -> std::convertible_to<unsigned int>;
 
     // Node identity
     { T::NodeId } -> std::convertible_to<unsigned char>;
@@ -55,19 +59,20 @@ concept ArkthosConfig = requires {
     { T::McastC } -> std::convertible_to<unsigned char>;
     { T::McastDBase } -> std::convertible_to<unsigned char>;
     { T::McastPortBase } -> std::convertible_to<unsigned short>;
+    { T::AllowLoopback } -> std::convertible_to<bool>;
 };
 
-inline void run_arkthos_listener(
+inline void run_arkthos_udp_listener(
     const unsigned int thread_id,
     const std::array<Address, Config::ListenerThreads>& listener_groups
 ) {
-    const int listener_socket = setup_server_socket(listener_groups[thread_id], 1 << 30);
+    const int listener_socket = setup_server_socket(listener_groups[thread_id], Config::RecvSendBufferSize);
 
     sockaddr_in src_addr{};
     socklen_t src_len = sizeof(src_addr);
 
     using RecvBuffer = std::array<char, Config::MaxMessageSize>;
-    std::unique_ptr<RecvBuffer> recv_buffer = std::make_unique<RecvBuffer>();
+    const std::unique_ptr<RecvBuffer> recv_buffer = std::make_unique<RecvBuffer>();
     iovec iov{
         .iov_base = recv_buffer->data(),
         .iov_len = recv_buffer->size()
@@ -86,7 +91,6 @@ inline void run_arkthos_listener(
 
     while (RUNNING.load(std::memory_order_relaxed)) {
         const ssize_t bytes_read = recvmsg(listener_socket, &msg, 0);
-
         if (bytes_read <= 0) {
             if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) continue;
             throw std::runtime_error("Failed to receive message");
@@ -94,36 +98,30 @@ inline void run_arkthos_listener(
     }
 }
 
-
-
-inline void run_arkthos_consensus(
+inline void run_arkthos_udp_consensus(
     const unsigned int thread_id,
     const std::array<Address, Config::ConsensusThreads>& multicast_groups
 ) {
-    std::array<int, Config::ConsensusThreads> sockets {};
+    const auto server_socket = setup_multicast_server_socket(multicast_groups[thread_id], Config::RecvSendBufferSize);
+    std::array<int, Config::ConsensusThreads> sockets{};
     for (unsigned int socket_id = 0; socket_id < Config::ConsensusThreads; ++socket_id) {
-        if (socket_id == thread_id) {
-            // setup multicast server socket
-        } else {
-            // setup socket connected to multicast group
-        }
+        sockets[socket_id] = setup_multicast_sender_socket(multicast_groups[socket_id], Config::RecvSendBufferSize, Config::AllowLoopback);
     }
 
     using RecvBuffer = std::array<char, Config::MaxMessageSize>;
-    std::unique_ptr<RecvBuffer> recv_buffer = std::make_unique<RecvBuffer>();
+    const std::unique_ptr<RecvBuffer> recv_buffer = std::make_unique<RecvBuffer>();
 
-    const auto server_socket = sockets[thread_id];
     while (RUNNING.load(std::memory_order_relaxed)) {
-        const auto bytes_read = recv(server_socket, recv_buffer->data(), recv_buffer->size(), 0);
-
+        const ssize_t bytes_read = recv(server_socket, recv_buffer->data(), recv_buffer->size(), 0);
         if (bytes_read <= 0) {
             if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) continue;
             throw std::runtime_error("Failed to receive message");
         }
+        fprintf(stderr, "Received %ld bytes on thread %d\n", bytes_read, thread_id);
     }
 }
 
-template<ArkthosConfig Config>
+template<ArkthosConfigUdp Config>
 void run_arkthos_udp() {
     unsigned int worker_index = 0;
     constexpr unsigned int TotalWorkers = Config::ListenerThreads + Config::ConsensusThreads;
@@ -164,17 +162,15 @@ void run_arkthos_udp() {
             ? thread_guard(
                   "Listener Thread " + std::to_string(i),
                   [i, &listener_groups] {
-                      run_arkthos_listener(i, listener_groups);
+                      run_arkthos_udp_listener(i, listener_groups);
                   })
             : thread_guard(
                   "Consensus Thread " + std::to_string(i - Config::ListenerThreads),
                   [thread_id = i - Config::ListenerThreads, &multicast_groups] {
-                      run_arkthos_consensus(thread_id, multicast_groups);
+                      run_arkthos_udp_consensus(thread_id, multicast_groups);
                   });
     }
 
-
-    for (auto &worker: workers) {
-        worker.join();
-    }
+    while (RUNNING.load()) pause();
+    for (std::thread &worker: workers) worker.join();
 }

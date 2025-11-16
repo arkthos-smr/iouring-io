@@ -2,7 +2,7 @@
 #include <thread>
 #include <sys/socket.h>
 #include <csignal>
-#include "Arkthos.h"
+#include "ArkthosTcp.h"
 #include <vector>
 
 void shutdown(const int signum) {
@@ -19,22 +19,23 @@ void shutdown(const int signum) {
 }
 
 int main() {
-    struct sigaction action {};
-    action.sa_handler = shutdown;
-    sigemptyset(&action.sa_mask);
-    action.sa_flags = 0;
-    sigaction(SIGINT,  &action, nullptr);
-    sigaction(SIGTERM, &action, nullptr);
-    sigaction(SIGQUIT, &action, nullptr);
-    sigaction(SIGHUP,  &action, nullptr);
+    try {
+        struct sigaction action{};
+        action.sa_handler = shutdown;
+        sigemptyset(&action.sa_mask);
+        sigaction(SIGINT, &action, nullptr);
+        sigaction(SIGTERM, &action, nullptr);
+        sigaction(SIGQUIT, &action, nullptr);
+        sigaction(SIGHUP, &action, nullptr);
 
-    std::array<std::thread, 1> workers{};
-    workers[0] = thread_guard("Arkthos main thread", [&]() {
-        run_arkthos_udp<Config>();
-    });
-
-    while (RUNNING.load()) pause();
-    for (auto &worker : workers) worker.join();
+        run_arkthos_tcp<ConfigTcp>();
+    } catch (const std::exception& e) {
+        std::cerr << "Fatal error: " << e.what() << "\n";
+        return 1;
+    } catch (...) {
+        std::cerr << "Unknown fatal error\n";
+        return 1;
+    }
 
     return 0;
 }

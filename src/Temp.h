@@ -126,6 +126,76 @@ inline int setup_socket(const unsigned int buf_size) {
     return fd;
 }
 
+inline int setup_multicast_sender_socket(const Address &group, const unsigned int buf_size, const bool allow_loopback) {
+    const int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) throw std::runtime_error("Failed to create multicast sender UDP socket");
+    tune_udp_socket(fd, buf_size);
+
+    constexpr int ttl = 1;
+    if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) < 0) {
+        close(fd);
+        throw std::runtime_error("setsockopt(IP_MULTICAST_TTL) failed");
+    }
+
+    constexpr int loopback = 0;
+    if (!allow_loopback) {
+        if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_LOOP, &loopback, sizeof(loopback)) < 0) {
+            close(fd);
+            throw std::runtime_error("setsockopt(IP_MULTICAST_LOOP) failed");
+        }
+    }
+
+    const sockaddr_in addr = group.to_sockaddr();
+    if (connect(fd, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) < 0) {
+        close(fd);
+        throw std::runtime_error("Failed to connect UDP multicast sender socket");
+    }
+
+    return fd;
+}
+
+
+
+inline int setup_multicast_server_socket(const Address& group_addr, const unsigned int buf_size) {
+    const int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) throw std::runtime_error("Failed to create multicast UDP socket");
+
+    constexpr int flag = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
+        close(fd);
+        throw std::runtime_error("Failed to set SO_REUSEADDR");
+    }
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
+        close(fd);
+        throw std::runtime_error("Failed to set SO_REUSEPORT");
+    }
+
+    sockaddr_in bind_addr{};
+    bind_addr.sin_family = AF_INET;
+    bind_addr.sin_port   = htons(group_addr.get_port());
+    bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (bind(fd, reinterpret_cast<sockaddr*>(&bind_addr), sizeof(bind_addr)) < 0) {
+        close(fd);
+        throw std::runtime_error("Failed to bind multicast server socket");
+    }
+
+    ip_mreqn mreq{};
+    mreq.imr_multiaddr.s_addr = group_addr.to_sockaddr().sin_addr.s_addr;
+    mreq.imr_address.s_addr = htonl(INADDR_ANY);  // listen on all interfaces
+    mreq.imr_ifindex = 0;                         // kernel picks interface
+
+    if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
+        close(fd);
+        throw std::runtime_error("Failed to join multicast group");
+    }
+
+    tune_udp_socket(fd, buf_size);
+
+    return fd;
+}
+
+
 inline int setup_server_socket(const Address &address, const unsigned int buf_size) {
     const int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) throw std::runtime_error("Failed to create UDP socket");
